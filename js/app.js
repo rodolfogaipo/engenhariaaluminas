@@ -141,7 +141,7 @@ async function renderView(tab) {
   if (tab === 'dashboard') return renderDashboard(view);
   if (tab === 'admin' && Auth.isAdmin()) return renderAdmin(view);
   if (tab === 'servicos') return renderServicos(view);
-  if (tab === 'corte') return renderWip(view, 'Plano de Corte', 'Acompanhamento de CNPs em corte chega no próximo passo.');
+  if (tab === 'corte') return renderCorte(view);
   if (tab === 'avisos') return renderWip(view, 'Quadro de Avisos', 'Os avisos cadastrados pelo administrador vão aparecer aqui.');
   if (tab === 'treino') return renderWip(view, 'Treinamento', 'Padrões de desenho e tutoriais de ferramentas (fotos e vídeos) vão aparecer aqui.');
 }

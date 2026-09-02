@@ -91,6 +91,14 @@ async function renderServicosLista(view) {
             user.tipo === 'admin' && s.aprovado !== 'aprovado'
               ? `<button class="btn btn--ghost" data-aprovar="${s.id}" style="padding:6px 12px; font-size:13px">Aprovar</button>`
               : '';
+          const editBtn =
+            user.tipo === 'admin'
+              ? `<button class="btn btn--ghost" data-editar="${s.id}" style="padding:6px 12px; font-size:13px">Editar</button>`
+              : '';
+          const delBtn =
+            user.tipo === 'admin'
+              ? `<button class="btn btn--danger" data-excluir="${s.id}" style="padding:6px 12px; font-size:13px">Excluir</button>`
+              : '';
           return `
           <div class="row" style="padding:14px 18px">
             <div class="row__main">
@@ -102,9 +110,11 @@ async function renderServicosLista(view) {
                   : ''
               }
             </div>
-            <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto">
+            <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end">
               ${statusBadge}
               ${aprovBtn}
+              ${editBtn}
+              ${delBtn}
             </div>
           </div>`;
         })
@@ -120,6 +130,29 @@ async function renderServicosLista(view) {
       registro.aprovado = 'aprovado';
       registro.dataAprovacao = Date.now();
       await DB.put('servicos', registro);
+      if (registro.tipo === 'CNP') await sincronizarPlanoCorteComCNP(registro);
+      renderServicosLista(view);
+    });
+  });
+
+  listaEl.querySelectorAll('[data-editar]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const registro = await DB.get('servicos', btn.dataset.editar);
+      if (!registro) return;
+      ServicosView.subView = 'form';
+      ServicosView.formState = criarEstadoFormularioEdicao(registro);
+      renderView('servicos');
+    });
+  });
+
+  listaEl.querySelectorAll('[data-excluir]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const registro = await DB.get('servicos', btn.dataset.excluir);
+      if (!registro) return;
+      const avisoCorte = registro.tipo === 'CNP' ? ' O registro correspondente em Plano de Corte também será excluído.' : '';
+      if (!confirm(`Excluir "${registro.nome}"?${avisoCorte} Essa ação não pode ser desfeita.`)) return;
+      await DB.delete('servicos', registro.id);
+      if (registro.tipo === 'CNP') await excluirPlanoCorteLigado(registro.id);
       renderServicosLista(view);
     });
   });
@@ -133,6 +166,7 @@ function Const_normaliza(s) {
 
 function criarEstadoFormularioVazio() {
   return {
+    editId: null,
     tipo: '',
     numeroPedido: '',
     nomeLivre: '',
@@ -146,9 +180,33 @@ function criarEstadoFormularioVazio() {
   };
 }
 
+function dataParaInputDate(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function criarEstadoFormularioEdicao(registro) {
+  return {
+    editId: registro.id,
+    tipo: registro.tipo,
+    numeroPedido: registro.numeroPedido || '',
+    nomeLivre: registro.nome || '',
+    dataProgramada: dataParaInputDate(registro.dataProgramada),
+    observacoes: registro.observacoes || '',
+    percentual: registro.percentualAproveitamento != null ? String(registro.percentualAproveitamento) : '',
+    catalogoNome: registro.nome || '',
+    catalogoMatches: [],
+    catalogoSelecionado: null,
+    erro: '',
+  };
+}
+
 async function renderServicoForm(view) {
   const st = ServicosView.formState;
-  const ehCadastro = Const.ehTipoCadastro(st.tipo);
+  const editando = !!st.editId;
+  const ehCadastro = !editando && Const.ehTipoCadastro(st.tipo);
   const ehCorteComAproveitamento = Const.ehTipoCorteComAproveitamento(st.tipo);
 
   view.innerHTML = `
@@ -156,7 +214,7 @@ async function renderServicoForm(view) {
       <button class="topbar__icon-btn" id="btn-voltar-servico" aria-label="Voltar" style="background:var(--paper-dim)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
-      <h2 class="section-title" style="margin:0">Novo Serviço</h2>
+      <h2 class="section-title" style="margin:0">${editando ? 'Editar Serviço' : 'Novo Serviço'}</h2>
     </div>
 
     ${st.erro ? `<div class="auth__error show" style="text-align:left; margin-bottom:16px">${escapeHtml(st.erro)}</div>` : ''}
@@ -164,10 +222,11 @@ async function renderServicoForm(view) {
     <div class="card">
       <div class="field">
         <label for="f-tipo">Tipo de Serviço</label>
-        <select id="f-tipo">
+        <select id="f-tipo" ${editando ? 'disabled' : ''}>
           <option value="">Selecione…</option>
           ${Const.TIPOS_SERVICO.map((t) => `<option value="${t}" ${t === st.tipo ? 'selected' : ''}>${t}</option>`).join('')}
         </select>
+        ${editando ? '<div class="row__meta" style="margin-top:6px">O tipo não pode ser alterado depois de lançado.</div>' : ''}
       </div>
 
       <div class="field">
@@ -199,7 +258,7 @@ async function renderServicoForm(view) {
       <div style="display:flex; gap:10px; margin-top:8px">
         <button class="btn btn--ghost" id="btn-cancelar-servico" style="flex:1">Cancelar</button>
         <button class="btn btn--primary" id="btn-salvar-servico" style="flex:2">
-          ${ehCadastro && st.catalogoSelecionado ? 'Registrar atualização' : 'Lançar serviço'}
+          ${ehCadastro && st.catalogoSelecionado ? 'Registrar atualização' : editando ? 'Salvar alterações' : 'Lançar serviço'}
         </button>
       </div>
     </div>
@@ -355,13 +414,15 @@ function atualizarBotaoSalvarLabel() {
   const st = ServicosView.formState;
   const btn = document.getElementById('btn-salvar-servico');
   if (!btn) return;
-  const ehCadastro = Const.ehTipoCadastro(st.tipo);
-  btn.textContent = ehCadastro && st.catalogoSelecionado ? 'Registrar atualização' : 'Lançar serviço';
+  const editando = !!st.editId;
+  const ehCadastro = !editando && Const.ehTipoCadastro(st.tipo);
+  btn.textContent = ehCadastro && st.catalogoSelecionado ? 'Registrar atualização' : editando ? 'Salvar alterações' : 'Lançar serviço';
 }
 
 async function salvarServico(view) {
   const st = ServicosView.formState;
   const user = Auth.current;
+  const editando = !!st.editId;
   st.erro = '';
 
   if (!st.tipo) {
@@ -369,7 +430,7 @@ async function salvarServico(view) {
     return renderServicoForm(view);
   }
 
-  const ehCadastro = Const.ehTipoCadastro(st.tipo);
+  const ehCadastro = !editando && Const.ehTipoCadastro(st.tipo);
   const ehCorte = Const.ehTipoCorteComAproveitamento(st.tipo);
 
   let nomeFinal = '';
@@ -419,6 +480,28 @@ async function salvarServico(view) {
     percentual = v;
   }
 
+  if (editando) {
+    const registro = await DB.get('servicos', st.editId);
+    if (!registro) {
+      voltarParaLista();
+      return;
+    }
+    registro.numeroPedido = st.numeroPedido || '';
+    registro.nome = nomeFinal;
+    registro.dataProgramada = st.dataProgramada ? new Date(st.dataProgramada).getTime() : null;
+    registro.observacoes = st.observacoes || '';
+    if (ehCorte) registro.percentualAproveitamento = percentual;
+    // qualquer edição volta a exigir aprovação, a não ser que quem edite seja o Admin
+    registro.aprovado = user.tipo === 'admin' ? 'aprovado' : 'pendente';
+    registro.dataAprovacao = user.tipo === 'admin' ? Date.now() : null;
+    registro.atualizadoEm = Date.now();
+
+    await DB.put('servicos', registro);
+    if (registro.tipo === 'CNP') await sincronizarPlanoCorteComCNP(registro);
+    voltarParaLista();
+    return;
+  }
+
   const registro = {
     id: dbUtil.uid(),
     tipo: st.tipo,
@@ -438,6 +521,54 @@ async function salvarServico(view) {
   };
 
   await DB.put('servicos', registro);
+  if (registro.tipo === 'CNP') await criarPlanoCorteParaCNP(registro);
   voltarParaLista();
+}
+
+/* ---------------- integração CNP → Plano de Corte ----------------
+   Assim que uma CNP é lançada, um registro correspondente nasce
+   automaticamente em Plano de Corte (status "Aguardando"), pra quem
+   for cortar já encontrar lá, sem precisar lançar de novo. Editar ou
+   aprovar a CNP mantém os dois em sincronia; excluir a CNP remove o
+   registro de corte junto. */
+
+async function criarPlanoCorteParaCNP(registroCNP) {
+  const pc = {
+    id: dbUtil.uid(),
+    cnpServicoId: registroCNP.id,
+    numeroPedido: registroCNP.numeroPedido || '',
+    nomeProduto: registroCNP.nome,
+    dataChegada: registroCNP.criadoEm,
+    dataProgramada: registroCNP.dataProgramada,
+    funcionarioCNPId: registroCNP.funcionarioId,
+    funcionarioCNPNome: registroCNP.funcionarioNome,
+    status: 'Aguardando',
+    dataInicioCorte: null,
+    dataFinalCorte: null,
+    funcionarioCorteId: null,
+    funcionarioCorteNome: null,
+    aprovado: registroCNP.aprovado,
+    dataAprovacao: registroCNP.dataAprovacao,
+    criadoEm: Date.now(),
+  };
+  await DB.put('plano_corte', pc);
+  return pc;
+}
+
+async function sincronizarPlanoCorteComCNP(registroCNP) {
+  const todos = await DB.getAll('plano_corte');
+  const pc = todos.find((p) => p.cnpServicoId === registroCNP.id);
+  if (!pc) return criarPlanoCorteParaCNP(registroCNP);
+  pc.numeroPedido = registroCNP.numeroPedido || '';
+  pc.nomeProduto = registroCNP.nome;
+  pc.dataProgramada = registroCNP.dataProgramada;
+  await DB.put('plano_corte', pc);
+  return pc;
+}
+
+async function excluirPlanoCorteLigado(cnpServicoId) {
+  const todos = await DB.getAll('plano_corte');
+  const pc = todos.find((p) => p.cnpServicoId === cnpServicoId);
+  if (pc) await DB.delete('plano_corte', pc.id);
 }
 
