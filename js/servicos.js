@@ -488,7 +488,7 @@ async function salvarServico(view) {
     }
     registro.numeroPedido = st.numeroPedido || '';
     registro.nome = nomeFinal;
-    registro.dataProgramada = st.dataProgramada ? new Date(st.dataProgramada).getTime() : null;
+    registro.dataProgramada = st.dataProgramada ? Const.inputDateParaTimestamp(st.dataProgramada) : null;
     registro.observacoes = st.observacoes || '';
     if (ehCorte) registro.percentualAproveitamento = percentual;
     // qualquer edição volta a exigir aprovação, a não ser que quem edite seja o Admin
@@ -507,7 +507,7 @@ async function salvarServico(view) {
     tipo: st.tipo,
     numeroPedido: st.numeroPedido || '',
     nome: nomeFinal,
-    dataProgramada: st.dataProgramada ? new Date(st.dataProgramada).getTime() : null,
+    dataProgramada: st.dataProgramada ? Const.inputDateParaTimestamp(st.dataProgramada) : null,
     dataFinal: null,
     observacoes: st.observacoes || '',
     percentualAproveitamento: percentual,

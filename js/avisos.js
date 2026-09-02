@@ -248,7 +248,7 @@ async function salvarAviso(view) {
     : { id: dbUtil.uid(), criadoEm: Date.now() };
 
   registro.texto = texto;
-  registro.data = st.data ? new Date(st.data).getTime() : Date.now();
+  registro.data = st.data ? Const.inputDateParaTimestamp(st.data) : Date.now();
   registro.hora = st.hora || null;
   registro.feito = !!st.feito;
   registro.atualizadoEm = Date.now();

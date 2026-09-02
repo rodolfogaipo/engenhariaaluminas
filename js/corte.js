@@ -241,8 +241,8 @@ async function salvarCorte(view) {
   }
 
   pc.status = st.status;
-  pc.dataInicioCorte = st.dataInicioCorte ? new Date(st.dataInicioCorte).getTime() : null;
-  pc.dataFinalCorte = st.dataFinalCorte ? new Date(st.dataFinalCorte).getTime() : null;
+  pc.dataInicioCorte = st.dataInicioCorte ? Const.inputDateParaTimestamp(st.dataInicioCorte) : null;
+  pc.dataFinalCorte = st.dataFinalCorte ? Const.inputDateParaTimestamp(st.dataFinalCorte) : null;
 
   if (st.funcionarioCorteId) {
     const func = st.usuarios.find((u) => u.id === st.funcionarioCorteId);

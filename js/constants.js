@@ -62,6 +62,17 @@ function formatarDataHora(ts) {
   return d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
+// Converte o valor de um <input type="date"> (ex: "2026-09-02") em timestamp
+// usando o horário LOCAL do dispositivo, em vez de UTC. Sem isso, o
+// JavaScript interpreta a string como meia-noite em UTC, e em fusos
+// atrás de UTC (como o Brasil) a data exibida "volta" um dia.
+function inputDateParaTimestamp(dateStr) {
+  if (!dateStr) return null;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d).getTime();
+}
+
 window.Const = {
   TIPOS_SERVICO,
   TIPOS_RECLASSIFICAVEIS,
@@ -72,4 +83,5 @@ window.Const = {
   ehTipoCorteComAproveitamento,
   formatarData,
   formatarDataHora,
+  inputDateParaTimestamp,
 };
