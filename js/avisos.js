@@ -66,6 +66,11 @@ async function renderAvisosLista(view) {
             ? '<span class="badge badge--ok">Feito</span>'
             : '<span class="badge badge--warn">Pendente</span>';
 
+          const dataHora = Const.formatarData(a.data) + (a.hora ? ` às ${escapeHtml(a.hora)}` : '');
+
+          const vistoPor = a.vistoPor || [];
+          const jaVi = vistoPor.some((v) => v.userId === user.id);
+
           const acoesAdmin = Auth.isAdmin()
             ? `
             <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end">
@@ -73,13 +78,19 @@ async function renderAvisosLista(view) {
               <button class="btn btn--ghost" data-editar="${a.id}" style="padding:6px 12px; font-size:13px">Editar</button>
               <button class="btn btn--danger" data-excluir="${a.id}" style="padding:6px 12px; font-size:13px">Excluir</button>
             </div>`
+            : `
+            <button class="btn ${jaVi ? 'btn--ghost' : 'btn--primary'}" data-visto="${a.id}" style="padding:6px 12px; font-size:13px">${jaVi ? '✓ Visto por você' : 'Marcar como visto'}</button>`;
+
+          const vistoResumo = Auth.isAdmin()
+            ? `<div class="row__meta">${vistoPor.length === 0 ? 'Ninguém viu ainda' : `Visto por: ${vistoPor.map((v) => escapeHtml(v.nome)).join(', ')}`}</div>`
             : '';
 
           return `
           <div class="row" style="padding:14px 18px; align-items:flex-start; flex-wrap:wrap; gap:10px">
             <div class="row__main" style="flex:1 1 220px">
               <div class="row__title" style="${a.feito ? 'text-decoration:line-through; color:var(--ink-faint)' : ''}">${escapeHtml(a.texto)}</div>
-              <div class="row__meta">${Const.formatarData(a.data)}</div>
+              <div class="row__meta">${dataHora}</div>
+              ${vistoResumo}
             </div>
             <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex:0 0 auto">
               ${statusBadge}
@@ -91,7 +102,24 @@ async function renderAvisosLista(view) {
     </div>
   `;
 
-  if (!Auth.isAdmin()) return;
+  if (!Auth.isAdmin()) {
+    listaEl.querySelectorAll('[data-visto]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const aviso = await DB.get('avisos', btn.dataset.visto);
+        if (!aviso) return;
+        aviso.vistoPor = aviso.vistoPor || [];
+        const idx = aviso.vistoPor.findIndex((v) => v.userId === user.id);
+        if (idx >= 0) {
+          aviso.vistoPor.splice(idx, 1); // toca de novo pra desmarcar
+        } else {
+          aviso.vistoPor.push({ userId: user.id, nome: user.nome, em: Date.now() });
+        }
+        await DB.put('avisos', aviso);
+        renderAvisosLista(view);
+      });
+    });
+    return;
+  }
 
   listaEl.querySelectorAll('[data-toggle]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -130,6 +158,7 @@ function criarEstadoAvisoVazio() {
     editId: null,
     texto: '',
     data: dataParaInputDate(Date.now()),
+    hora: '',
     feito: false,
     erro: '',
   };
@@ -140,6 +169,7 @@ function criarEstadoAvisoEdicao(aviso) {
     editId: aviso.id,
     texto: aviso.texto || '',
     data: dataParaInputDate(aviso.data) || dataParaInputDate(Date.now()),
+    hora: aviso.hora || '',
     feito: !!aviso.feito,
     erro: '',
   };
@@ -165,9 +195,15 @@ async function renderAvisoForm(view) {
         <textarea id="f-aviso-texto" placeholder="Ex: Reunião de equipe sexta às 8h">${escapeHtml(st.texto)}</textarea>
       </div>
 
-      <div class="field">
-        <label for="f-aviso-data">Data</label>
-        <input id="f-aviso-data" type="date" value="${escapeHtml(st.data)}" />
+      <div style="display:flex; gap:12px">
+        <div class="field" style="flex:1">
+          <label for="f-aviso-data">Data</label>
+          <input id="f-aviso-data" type="date" value="${escapeHtml(st.data)}" />
+        </div>
+        <div class="field" style="flex:1">
+          <label for="f-aviso-hora">Hora (opcional)</label>
+          <input id="f-aviso-hora" type="time" value="${escapeHtml(st.hora)}" />
+        </div>
       </div>
 
       <label style="display:flex; align-items:center; gap:8px; margin-bottom:20px; font-size:14px; color:var(--ink-soft)">
@@ -186,6 +222,7 @@ async function renderAvisoForm(view) {
   document.getElementById('btn-cancelar-aviso').addEventListener('click', voltarParaListaAvisos);
   document.getElementById('f-aviso-texto').addEventListener('input', (ev) => (st.texto = ev.target.value));
   document.getElementById('f-aviso-data').addEventListener('input', (ev) => (st.data = ev.target.value));
+  document.getElementById('f-aviso-hora').addEventListener('input', (ev) => (st.hora = ev.target.value));
   document.getElementById('f-aviso-feito').addEventListener('change', (ev) => (st.feito = ev.target.checked));
 
   document.getElementById('btn-salvar-aviso').addEventListener('click', () => salvarAviso(view));
@@ -212,6 +249,7 @@ async function salvarAviso(view) {
 
   registro.texto = texto;
   registro.data = st.data ? new Date(st.data).getTime() : Date.now();
+  registro.hora = st.hora || null;
   registro.feito = !!st.feito;
   registro.atualizadoEm = Date.now();
 
