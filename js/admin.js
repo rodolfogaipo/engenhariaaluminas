@@ -12,6 +12,7 @@ const AdminView = {
   edicaoId: null,
   fotoBase64: null,
   erro: '',
+  formValues: { nome: '', login: '', tipo: 'funcionario' },
 };
 
 async function renderAdmin(view) {
@@ -98,6 +99,7 @@ async function renderAdminUsuarios(cont, view) {
     AdminView.edicaoId = null;
     AdminView.fotoBase64 = null;
     AdminView.erro = '';
+    AdminView.formValues = { nome: '', login: '', tipo: 'funcionario' };
     renderAdminUsuarios(cont, view);
   });
 
@@ -108,6 +110,7 @@ async function renderAdminUsuarios(cont, view) {
       AdminView.edicaoId = u.id;
       AdminView.fotoBase64 = u.foto || null;
       AdminView.erro = '';
+      AdminView.formValues = { nome: u.nome, login: u.login, tipo: u.tipo };
       renderAdminUsuarios(cont, view);
     });
   });
@@ -123,7 +126,7 @@ async function renderAdminUsuarios(cont, view) {
 
 async function renderFormUsuario(cont, view) {
   const editando = !!AdminView.edicaoId;
-  const usuario = editando ? await DB.get('usuarios', AdminView.edicaoId) : null;
+  const fv = AdminView.formValues;
 
   cont.innerHTML = `
     <div class="card">
@@ -143,21 +146,21 @@ async function renderFormUsuario(cont, view) {
 
       <div class="field">
         <label for="f-nome-u">Nome</label>
-        <input id="f-nome-u" value="${escapeHtml(usuario?.nome || '')}" />
+        <input id="f-nome-u" value="${escapeHtml(fv.nome)}" />
       </div>
       <div class="field">
         <label for="f-login-u">Usuário (login)</label>
-        <input id="f-login-u" value="${escapeHtml(usuario?.login || '')}" autocomplete="off" />
+        <input id="f-login-u" value="${escapeHtml(fv.login)}" autocomplete="off" />
       </div>
       <div class="field">
         <label for="f-senha-u">${editando ? 'Nova senha (deixe em branco para manter)' : 'Senha'}</label>
-        <input id="f-senha-u" type="password" autocomplete="new-password" />
+        <input id="f-senha-u" type="password" autocomplete="new-password" value="${escapeHtml(fv.senha || '')}" />
       </div>
       <div class="field">
         <label for="f-tipo-u">Tipo de acesso</label>
         <select id="f-tipo-u">
-          <option value="funcionario" ${usuario?.tipo === 'funcionario' ? 'selected' : ''}>Funcionário</option>
-          <option value="admin" ${usuario?.tipo === 'admin' ? 'selected' : ''}>Administrador</option>
+          <option value="funcionario" ${fv.tipo === 'funcionario' ? 'selected' : ''}>Funcionário</option>
+          <option value="admin" ${fv.tipo === 'admin' ? 'selected' : ''}>Administrador</option>
         </select>
       </div>
 
@@ -168,16 +171,26 @@ async function renderFormUsuario(cont, view) {
     </div>
   `;
 
+  document.getElementById('f-nome-u').addEventListener('input', (ev) => (fv.nome = ev.target.value));
+  document.getElementById('f-login-u').addEventListener('input', (ev) => (fv.login = ev.target.value));
+  document.getElementById('f-senha-u').addEventListener('input', (ev) => (fv.senha = ev.target.value));
+  document.getElementById('f-tipo-u').addEventListener('change', (ev) => (fv.tipo = ev.target.value));
+
   document.getElementById('f-foto').addEventListener('change', async (ev) => {
     const file = ev.target.files[0];
     if (!file) return;
-    if (file.size > 3 * 1024 * 1024) {
-      AdminView.erro = 'Foto muito grande — escolha uma imagem de até 3MB.';
+    if (file.size > 20 * 1024 * 1024) {
+      AdminView.erro = 'Foto muito grande — escolha uma imagem de até 20MB.';
       renderFormUsuario(cont, view);
       return;
     }
-    const dataUrl = await fileToResizedDataUrl(file, 320);
-    AdminView.fotoBase64 = dataUrl;
+    try {
+      const dataUrl = await fileToResizedDataUrl(file, 320);
+      AdminView.fotoBase64 = dataUrl;
+      AdminView.erro = '';
+    } catch (e) {
+      AdminView.erro = 'Não consegui abrir essa imagem. Tente outra foto (JPG ou PNG).';
+    }
     renderFormUsuario(cont, view);
   });
 
@@ -186,14 +199,15 @@ async function renderFormUsuario(cont, view) {
     renderAdminUsuarios(cont, view);
   });
 
-  document.getElementById('btn-salvar-usuario').addEventListener('click', () => salvarUsuario(cont, view, usuario));
+  document.getElementById('btn-salvar-usuario').addEventListener('click', () => salvarUsuario(cont, view));
 }
 
-async function salvarUsuario(cont, view, usuarioExistente) {
+async function salvarUsuario(cont, view) {
   const nome = document.getElementById('f-nome-u').value.trim();
   const login = document.getElementById('f-login-u').value.trim();
   const senha = document.getElementById('f-senha-u').value;
   const tipo = document.getElementById('f-tipo-u').value;
+  const usuarioExistente = AdminView.edicaoId ? await DB.get('usuarios', AdminView.edicaoId) : null;
 
   if (!nome || !login) {
     AdminView.erro = 'Preencha nome e usuário.';
