@@ -7,7 +7,7 @@
    ========================================================= */
 
 const DB_NAME = 'controle_equipe_db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORES = [
   { name: 'usuarios', keyPath: 'id' },
@@ -20,6 +20,7 @@ const STORES = [
   { name: 'treinamento', keyPath: 'id' },
   { name: 'config', keyPath: 'chave' },         // pesos da fórmula, metas, etc.
   { name: 'destaques', keyPath: 'id' },         // melhor da semana/mês/ano
+  { name: 'catalogo_itens', keyPath: 'id' },    // tecidos, telas, espumas, chapas, tubos, móveis já cadastrados
 ];
 
 function openDb() {
