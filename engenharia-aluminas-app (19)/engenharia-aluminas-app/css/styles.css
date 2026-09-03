@@ -1,0 +1,519 @@
+/* =========================================================
+   CONTROLE DE EQUIPE — Design tokens
+   Identidade: prancheta de controle de qualidade industrial.
+   Vinho profundo + marfim (papel) + metal (ferramentas), com
+   traços finos de "planta baixa" ao fundo em telas de destaque.
+   ========================================================= */
+
+:root {
+  /* --- Marca (extraída do ícone) --- */
+  --brand-900: #3D0308;
+  --brand-800: #62040A;
+  --brand-700: #7A1F2B;
+  --brand-600: #9C2A34;
+  --brand-500: #B8404A;
+  --brand-100: #F6E4E2;
+
+  /* --- Papel / superfícies --- */
+  --paper: #F4EFE3;
+  --paper-dim: #EAE2D0;
+  --surface: #FFFFFF;
+  --surface-sunken: #FAF7EF;
+  --ink: #2A2320;
+  --ink-soft: #5C5348;
+  --ink-faint: #8B8175;
+  --line: #DED5C2;
+
+  /* --- Metal (ações neutras, admin) --- */
+  --metal-900: #2E3033;
+  --metal-700: #565A5E;
+  --metal-400: #9CA0A4;
+  --metal-200: #D8DADC;
+
+  /* --- Semântico (mantém a linguagem da planilha) --- */
+  --ok-fg: #1F7A4D;
+  --ok-bg: #E4F3EA;
+  --warn-fg: #9A6B08;
+  --warn-bg: #FBF0D6;
+  --danger-fg: #B0332B;
+  --danger-bg: #FBE6E3;
+  --idle-fg: #6B6459;
+  --idle-bg: #ECE7DA;
+
+  /* --- Tipografia --- */
+  --font-display: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* --- Escala --- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 16px;
+
+  --shadow-card: 0 1px 2px rgba(42, 35, 32, 0.06), 0 4px 14px rgba(42, 35, 32, 0.07);
+  --shadow-pop: 0 8px 28px rgba(42, 35, 32, 0.18);
+
+  --nav-h: 64px;
+  --topbar-h: 56px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+/* =========================================================
+   Reset & base
+   ========================================================= */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+
+html {
+  /* trava o zoom por pinça / duplo toque em todo o app;
+     telas de imagem reabilitam zoom localmente (.zoomable) */
+  touch-action: pan-x pan-y;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden; /* o scroll acontece dentro de #view, nunca na página toda */
+  position: fixed;
+  inset: 0;
+  width: 100%;
+}
+
+img, svg, video { max-width: 100%; display: block; }
+
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: 16px; /* >=16px evita auto-zoom do iOS ao focar campo */
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+a { color: var(--brand-700); }
+
+/* =========================================================
+   Shell do app
+   ========================================================= */
+#app-shell {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+}
+
+.topbar {
+  height: var(--topbar-h);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-4);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  z-index: 20;
+}
+
+.topbar__mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex: 0 0 auto;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+}
+.topbar__mark img { width: 100%; height: 100%; object-fit: cover; }
+
+.topbar__title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--brand-800);
+  letter-spacing: 0.2px;
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar__user {
+  font-size: 13px;
+  color: var(--ink-soft);
+  text-align: right;
+  line-height: 1.25;
+}
+.topbar__user b { color: var(--ink); font-weight: 600; display: block; }
+
+.topbar__icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--ink-soft);
+  flex: 0 0 auto;
+}
+.topbar__icon-btn:active { background: var(--paper-dim); }
+
+/* view = área rolável entre topbar e navegação */
+#view {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--sp-4) var(--sp-4) calc(var(--sp-7) + var(--safe-b));
+  overscroll-behavior-y: contain;
+}
+
+@media (min-width: 860px) {
+  #view { padding: var(--sp-6) var(--sp-7) var(--sp-7); }
+}
+
+/* =========================================================
+   Navegação — barra inferior no mobile, trilho lateral no desktop
+   ========================================================= */
+.tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: calc(var(--nav-h) + var(--safe-b));
+  padding-bottom: var(--safe-b);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  display: flex;
+  z-index: 20;
+}
+
+.tabbar__item {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--ink-faint);
+  font-size: 11px;
+  padding: 6px 2px;
+}
+.tabbar__item svg { width: 22px; height: 22px; }
+.tabbar__item.active { color: var(--brand-700); }
+.tabbar__item.active svg { filter: drop-shadow(0 0 0 var(--brand-700)); }
+.tabbar__item:active { opacity: 0.6; }
+
+@media (min-width: 860px) {
+  .tabbar {
+    position: fixed;
+    top: var(--topbar-h); left: 0; bottom: 0; right: auto;
+    width: 220px;
+    height: auto;
+    flex-direction: column;
+    border-top: none;
+    border-right: 1px solid var(--line);
+    padding: var(--sp-4) var(--sp-2);
+    gap: var(--sp-1);
+  }
+  .tabbar__item {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-3);
+    border-radius: var(--radius-m);
+    font-size: 14px;
+  }
+  .tabbar__item.active { background: var(--brand-100); }
+  #view { margin-left: 220px; }
+  .topbar { padding-left: var(--sp-5); }
+}
+
+/* =========================================================
+   Cartões / listas
+   ========================================================= */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-card);
+  padding: var(--sp-5);
+}
+
+.card + .card { margin-top: var(--sp-4); }
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 var(--sp-1);
+}
+
+.section-sub {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  margin: 0 0 var(--sp-4);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stat__value {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--brand-800);
+  line-height: 1;
+}
+.stat__label {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-4);
+}
+@media (min-width: 640px) {
+  .stat-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* Selos de status — herdam a linguagem de cores da planilha */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.badge--ok { color: var(--ok-fg); background: var(--ok-bg); }
+.badge--warn { color: var(--warn-fg); background: var(--warn-bg); }
+.badge--danger { color: var(--danger-fg); background: var(--danger-bg); }
+.badge--idle { color: var(--idle-fg); background: var(--idle-bg); }
+.badge--brand { color: var(--brand-800); background: var(--brand-100); }
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+.row:last-child { border-bottom: none; }
+.row__main { min-width: 0; }
+.row__title { font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.row__meta { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
+
+/* =========================================================
+   Botões
+   ========================================================= */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: 12px 20px;
+  border-radius: var(--radius-m);
+  font-size: 15px;
+  font-weight: 600;
+  transition: transform .08s ease, opacity .12s ease;
+}
+.btn:active { transform: scale(0.97); }
+
+.btn--primary { background: var(--brand-700); color: #fff; }
+.btn--primary:active { background: var(--brand-800); }
+
+.btn--ghost { background: var(--paper-dim); color: var(--ink); }
+
+.btn--metal { background: var(--metal-900); color: #fff; }
+
+.btn--block { width: 100%; }
+
+.btn--danger { background: var(--danger-bg); color: var(--danger-fg); }
+
+.btn:disabled { opacity: 0.5; pointer-events: none; }
+
+/* =========================================================
+   Formulários
+   ========================================================= */
+.field { margin-bottom: var(--sp-4); }
+.field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin-bottom: var(--sp-2);
+}
+.field input, .field select, .field textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--line);
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  outline: 2px solid var(--brand-600);
+  outline-offset: 1px;
+  background: var(--surface);
+}
+.field textarea { resize: vertical; min-height: 80px; }
+
+/* =========================================================
+   Tela de login
+   ========================================================= */
+.auth {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5);
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(122,31,43,0.10), transparent 60%),
+    var(--paper);
+  overflow-y: auto;
+}
+
+.auth__blueprint {
+  position: absolute;
+  inset: 0;
+  opacity: 0.05;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--brand-800) 1px, transparent 1px),
+    linear-gradient(90deg, var(--brand-800) 1px, transparent 1px);
+  background-size: 34px 34px;
+}
+
+.auth__card {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  background: var(--surface);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-pop);
+  padding: var(--sp-6) var(--sp-5);
+  text-align: center;
+}
+
+.auth__mark {
+  width: 76px;
+  height: 76px;
+  border-radius: 20px;
+  margin: 0 auto var(--sp-4);
+  box-shadow: 0 6px 18px rgba(98,4,10,0.35);
+  overflow: hidden;
+}
+.auth__mark img { width: 100%; height: 100%; }
+
+.auth__title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--brand-800);
+  margin: 0 0 2px;
+}
+.auth__sub {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  margin: 0 0 var(--sp-5);
+}
+.auth__error {
+  font-size: 13px;
+  color: var(--danger-fg);
+  background: var(--danger-bg);
+  border-radius: var(--radius-s);
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-4);
+  display: none;
+}
+.auth__error.show { display: block; }
+
+.auth__offline-note {
+  margin-top: var(--sp-5);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+/* =========================================================
+   Estado vazio
+   ========================================================= */
+.empty {
+  text-align: center;
+  padding: var(--sp-7) var(--sp-4);
+  color: var(--ink-soft);
+}
+.empty__title { font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+.empty__sub { font-size: 13.5px; }
+
+/* =========================================================
+   Zoom controlado — SOMENTE em imagens/fotos abertas em visor.
+   Todo o resto do app permanece sem zoom (definido em html/body).
+   ========================================================= */
+.zoomable-wrap {
+  touch-action: pinch-zoom pan-x pan-y;
+  overflow: auto;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+.zoomable-wrap img { touch-action: pinch-zoom; }
+
+/* =========================================================
+   Placeholder "em construção" para módulos futuros
+   ========================================================= */
+.wip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--sp-7) var(--sp-4);
+  color: var(--ink-soft);
+  gap: var(--sp-2);
+}
+.wip svg { width: 40px; height: 40px; color: var(--metal-400); margin-bottom: var(--sp-2); }
+.wip b { color: var(--ink); }
+
+/* =========================================================
+   Extras — módulo de Serviços / Catálogo (passo 2)
+   ========================================================= */
+.field select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235C5348' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 18px;
+  padding-right: 38px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand-600);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

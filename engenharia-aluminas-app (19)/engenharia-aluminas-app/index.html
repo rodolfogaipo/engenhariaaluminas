@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<!--
+  viewport travado: user-scalable=no + maximum-scale=1 impedem o
+  pinch-zoom e o duplo-toque de dar zoom no app inteiro. Zoom só é
+  reabilitado localmente na tela de visualização de imagens
+  (.zoomable-wrap), como pedido.
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Engenharia Aluminas</title>
+<meta name="description" content="Engenharia Aluminas — controle de equipe, CNPs, plano de corte e desempenho, offline first" />
+
+<meta name="theme-color" content="#62040A" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Eng. Aluminas" />
+
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/favicon.ico" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+<div id="root"></div>
+
+<script src="js/db.js"></script>
+<script src="js/constants.js"></script>
+<script src="js/catalog.js"></script>
+<script src="js/categorias.js"></script>
+<script src="js/metrics.js"></script>
+<script src="js/servicos.js"></script>
+<script src="js/corte.js"></script>
+<script src="js/avisos.js"></script>
+<script src="js/ferias.js"></script>
+<script src="js/seed-import.js"></script>
+<script src="js/admin.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
