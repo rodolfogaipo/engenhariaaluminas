@@ -26,20 +26,6 @@ async function renderServicos(view) {
 
 async function renderServicosLista(view) {
   const user = Auth.current;
-  const todos = await DB.getAll('servicos');
-
-  const meus = user.tipo === 'admin' ? todos : todos.filter((s) => s.funcionarioId === user.id);
-  const filtro = Const_normaliza(ServicosView.filtroTexto);
-  const filtrados = meus
-    .filter((s) => {
-      if (!filtro) return true;
-      return (
-        Const_normaliza(s.nome).includes(filtro) ||
-        Const_normaliza(s.tipo).includes(filtro) ||
-        Const_normaliza(s.funcionarioNome).includes(filtro)
-      );
-    })
-    .sort((a, b) => b.criadoEm - a.criadoEm);
 
   view.innerHTML = `
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap">
@@ -66,13 +52,36 @@ async function renderServicosLista(view) {
   const buscaInput = document.getElementById('busca-servico');
   buscaInput.addEventListener('input', () => {
     ServicosView.filtroTexto = buscaInput.value;
-    renderServicosLista(view);
+    atualizarListaServicos(view);
   });
 
+  await atualizarListaServicos(view);
+}
+
+async function atualizarListaServicos(view) {
+  const user = Auth.current;
+  const todos = await DB.getAll('servicos');
+
+  const meus = user.tipo === 'admin' ? todos : todos.filter((s) => s.funcionarioId === user.id);
+  const filtro = Const_normaliza(ServicosView.filtroTexto);
+  const filtrados = meus
+    .filter((s) => {
+      if (!filtro) return true;
+      return (
+        Const_normaliza(s.nome).includes(filtro) ||
+        Const_normaliza(s.tipo).includes(filtro) ||
+        Const_normaliza(s.funcionarioNome).includes(filtro)
+      );
+    })
+    .sort((a, b) => b.criadoEm - a.criadoEm);
+
   const listaEl = document.getElementById('lista-servicos');
+  if (!listaEl) return;
+
   if (filtrados.length === 0) {
     listaEl.innerHTML = `
       <div class="card">
+
         <div class="empty">
           <div class="empty__title">Nenhum serviço lançado ainda</div>
           <div class="empty__sub">Toque em "+ Novo Serviço" para lançar o primeiro.</div>
@@ -160,7 +169,7 @@ async function renderServicosLista(view) {
       if (!registro) return;
       registro.concluidoInformadoEm = Date.now();
       await DB.put('servicos', registro);
-      renderServicosLista(view);
+      atualizarListaServicos(view);
     });
   });
 
@@ -173,7 +182,7 @@ async function renderServicosLista(view) {
       registro.dataAprovacao = Date.now();
       await DB.put('servicos', registro);
       if (registro.tipo === 'CNP') await sincronizarPlanoCorteComCNP(registro);
-      renderServicosLista(view);
+      atualizarListaServicos(view);
     });
   });
 
@@ -205,7 +214,7 @@ async function renderServicosLista(view) {
       if (!confirm(`Excluir "${registro.nome}"?${avisoCorte} Essa ação não pode ser desfeita.`)) return;
       await DB.delete('servicos', registro.id);
       if (registro.tipo === 'CNP') await excluirPlanoCorteLigado(registro.id);
-      renderServicosLista(view);
+      atualizarListaServicos(view);
     });
   });
 }

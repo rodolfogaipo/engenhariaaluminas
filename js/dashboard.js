@@ -440,7 +440,7 @@ async function renderDashboardIndividual(view, userId, nomeExibicao, subtitulo, 
     ${atual.emFerias ? '<div class="row__meta" style="text-align:center; margin-top:10px">🏖️ De férias nesta semana — não conta contra a meta.</div>' : ''}
 
     <div class="card" style="margin-top:16px">
-      <h3 class="section-title" style="font-size:16px; margin-bottom:14px">Nota nas últimas 6 semanas</h3>
+      <h3 class="section-title" style="font-size:16px; margin-bottom:14px">% da Meta nas últimas 6 semanas</h3>
       <div id="grafico-nota"></div>
     </div>
 
@@ -456,9 +456,9 @@ async function renderDashboardIndividual(view, userId, nomeExibicao, subtitulo, 
 
   const dadosGrafico = resumo.semanas.map((s) => ({
     label: rotuloSemana(s.inicio),
-    value: s.emFerias ? 0 : s.nota,
+    value: s.emFerias || s.pctMeta == null ? 0 : Math.round(s.pctMeta * 100),
   }));
-  document.getElementById('grafico-nota').innerHTML = graficoBarrasSVG(dadosGrafico, 100);
+  document.getElementById('grafico-nota').innerHTML = graficoBarrasSVG(dadosGrafico, 100, '%');
 }
 
 function rotuloSemana(ts) {

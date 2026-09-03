@@ -31,22 +31,6 @@ async function renderCorte(view) {
 /* ---------------- LISTA ---------------- */
 
 async function renderCorteLista(view) {
-  const user = Auth.current;
-  const todos = await DB.getAll('plano_corte');
-  const filtro = Const_normaliza(CorteView.filtroTexto);
-
-  const filtrados = todos
-    .filter((p) => {
-      if (!filtro) return true;
-      return (
-        Const_normaliza(p.nomeProduto).includes(filtro) ||
-        Const_normaliza(p.funcionarioCNPNome).includes(filtro) ||
-        Const_normaliza(p.funcionarioCorteNome).includes(filtro) ||
-        Const_normaliza(p.numeroPedido).includes(filtro)
-      );
-    })
-    .sort((a, b) => b.criadoEm - a.criadoEm);
-
   view.innerHTML = `
     <div style="margin-bottom:16px">
       <h2 class="section-title" style="margin-bottom:2px">Plano de Corte</h2>
@@ -63,10 +47,32 @@ async function renderCorteLista(view) {
   const buscaInput = document.getElementById('busca-corte');
   buscaInput.addEventListener('input', () => {
     CorteView.filtroTexto = buscaInput.value;
-    renderCorteLista(view);
+    atualizarListaCorte(view);
   });
 
+  await atualizarListaCorte(view);
+}
+
+async function atualizarListaCorte(view) {
+  const user = Auth.current;
+  const todos = await DB.getAll('plano_corte');
+  const filtro = Const_normaliza(CorteView.filtroTexto);
+
+  const filtrados = todos
+    .filter((p) => {
+      if (!filtro) return true;
+      return (
+        Const_normaliza(p.nomeProduto).includes(filtro) ||
+        Const_normaliza(p.funcionarioCNPNome).includes(filtro) ||
+        Const_normaliza(p.funcionarioCorteNome).includes(filtro) ||
+        Const_normaliza(p.numeroPedido).includes(filtro)
+      );
+    })
+    .sort((a, b) => b.criadoEm - a.criadoEm);
+
   const listaEl = document.getElementById('lista-corte');
+  if (!listaEl) return;
+
   if (filtrados.length === 0) {
     listaEl.innerHTML = `
       <div class="card">
@@ -125,7 +131,7 @@ async function renderCorteLista(view) {
       pc.aprovado = 'aprovado';
       pc.dataAprovacao = Date.now();
       await DB.put('plano_corte', pc);
-      renderCorteLista(view);
+      atualizarListaCorte(view);
     });
   });
 
@@ -143,7 +149,7 @@ async function renderCorteLista(view) {
     btn.addEventListener('click', async () => {
       if (!confirm('Excluir este registro de Plano de Corte? A CNP original em Serviços não será apagada.')) return;
       await DB.delete('plano_corte', btn.dataset.excluir);
-      renderCorteLista(view);
+      atualizarListaCorte(view);
     });
   });
 }
