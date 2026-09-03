@@ -178,6 +178,13 @@ const Metrics = {
     return eventos.filter((e) => e.dataFinal >= inicioAno && e.dataFinal <= referenciaTs).length;
   },
 
+  async totalMesEspecifico(funcionarioId, ano, mes) {
+    const eventos = await this.eventosConcluidosDoFuncionario(funcionarioId);
+    const inicio = new Date(ano, mes, 1).getTime();
+    const fim = new Date(ano, mes + 1, 1).getTime();
+    return eventos.filter((e) => e.dataFinal >= inicio && e.dataFinal < fim).length;
+  },
+
   /* mantido para compatibilidade — janela corrida de N dias */
   async totalPeriodo(funcionarioId, dias) {
     const eventos = await this.eventosConcluidosDoFuncionario(funcionarioId);

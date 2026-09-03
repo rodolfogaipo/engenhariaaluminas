@@ -9,6 +9,8 @@
 
 const DashboardAdminView = {
   modo: 'equipe', // 'equipe' | 'minha'
+  periodoTipo: 'semana', // 'semana' | 'mes'
+  dataReferencia: Date.now(), // qualquer dia dentro da semana/mês visualizado
 };
 
 async function renderDashboard(view) {
@@ -46,8 +48,85 @@ async function renderDashboard(view) {
 /* ---------------- COMPARATIVO DE EQUIPE (Admin) ---------------- */
 
 async function renderDashboardEquipe(cont) {
-  cont.innerHTML = `<div class="wip">${ICONS.wip}<b>Calculando…</b></div>`;
+  cont.innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
+        <div style="display:flex; gap:8px">
+          <button class="btn ${DashboardAdminView.periodoTipo === 'semana' ? 'btn--primary' : 'btn--ghost'}" id="btn-periodo-semana" style="padding:8px 14px; font-size:13px">Semana</button>
+          <button class="btn ${DashboardAdminView.periodoTipo === 'mes' ? 'btn--primary' : 'btn--ghost'}" id="btn-periodo-mes" style="padding:8px 14px; font-size:13px">Mês</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px">
+          <button class="topbar__icon-btn" id="btn-periodo-anterior" style="background:var(--paper-dim)" aria-label="Período anterior">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <span id="rotulo-periodo" style="font-weight:600; font-size:14px; min-width:150px; text-align:center"></span>
+          <button class="topbar__icon-btn" id="btn-periodo-proximo" style="background:var(--paper-dim)" aria-label="Próximo período">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div id="dash-equipe-conteudo"><div class="wip">${ICONS.wip}<b>Calculando…</b></div></div>
+  `;
 
+  document.getElementById('rotulo-periodo').textContent = rotuloPeriodo();
+
+  document.getElementById('btn-periodo-semana').addEventListener('click', () => {
+    DashboardAdminView.periodoTipo = 'semana';
+    renderDashboardEquipe(cont);
+  });
+  document.getElementById('btn-periodo-mes').addEventListener('click', () => {
+    DashboardAdminView.periodoTipo = 'mes';
+    renderDashboardEquipe(cont);
+  });
+  document.getElementById('btn-periodo-anterior').addEventListener('click', () => {
+    navegarPeriodo(-1);
+    renderDashboardEquipe(cont);
+  });
+  const btnProximo = document.getElementById('btn-periodo-proximo');
+  btnProximo.disabled = periodoEhAtualOuFuturo();
+  btnProximo.addEventListener('click', () => {
+    navegarPeriodo(1);
+    renderDashboardEquipe(cont);
+  });
+
+  await renderDashboardEquipeConteudo(document.getElementById('dash-equipe-conteudo'));
+}
+
+function rotuloPeriodo() {
+  const d = new Date(DashboardAdminView.dataReferencia);
+  if (DashboardAdminView.periodoTipo === 'mes') {
+    return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  }
+  const inicio = new Date(Metrics.segundaFeira(DashboardAdminView.dataReferencia));
+  const fim = new Date(inicio);
+  fim.setDate(fim.getDate() + 6);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(inicio.getDate())}/${pad(inicio.getMonth() + 1)} a ${pad(fim.getDate())}/${pad(fim.getMonth() + 1)}`;
+}
+
+function navegarPeriodo(direcao) {
+  const d = new Date(DashboardAdminView.dataReferencia);
+  if (DashboardAdminView.periodoTipo === 'mes') {
+    d.setDate(1);
+    d.setMonth(d.getMonth() + direcao);
+  } else {
+    d.setDate(d.getDate() + direcao * 7);
+  }
+  DashboardAdminView.dataReferencia = d.getTime();
+}
+
+function periodoEhAtualOuFuturo() {
+  const agora = Date.now();
+  if (DashboardAdminView.periodoTipo === 'mes') {
+    const d = new Date(DashboardAdminView.dataReferencia);
+    const hoje = new Date();
+    return d.getFullYear() === hoje.getFullYear() && d.getMonth() === hoje.getMonth();
+  }
+  return Metrics.segundaFeira(DashboardAdminView.dataReferencia) === Metrics.segundaFeira(agora);
+}
+
+async function renderDashboardEquipeConteudo(cont) {
   const usuarios = await DB.getAll('usuarios');
   const funcionarios = usuarios.filter((u) => u.tipo !== 'admin');
 
@@ -62,22 +141,37 @@ async function renderDashboardEquipe(cont) {
     return;
   }
 
+  const dataRef = DashboardAdminView.dataReferencia;
+  const modoMes = DashboardAdminView.periodoTipo === 'mes';
+
   const linhas = await Promise.all(
     funcionarios.map(async (f) => {
-      const resumo = await Metrics.resumoSemanal(f.id, 1);
+      // a "nota" e a "meta semanal" sempre vêm da semana que contém a data de
+      // referência — em modo mês, usamos o meta semanal como base pra estimar
+      // a meta do mês (meta semanal × semanas do período)
+      const resumo = await Metrics.resumoSemanal(f.id, 1, dataRef);
       const atual = resumo.atual;
-      const projetosMes = await Metrics.totalMesCalendario(f.id);
-      const metaMes = atual.meta * 4.345; // média de semanas por mês (aproximado)
-      const pctMetaMes = metaMes > 0 ? projetosMes / metaMes : 0;
+
+      if (!modoMes) {
+        return {
+          usuario: f,
+          emFerias: atual.emFerias,
+          projetos: atual.projetos,
+          meta: atual.meta,
+          pctMeta: atual.pctMeta,
+          nota: atual.nota,
+        };
+      }
+
+      const d = new Date(dataRef);
+      const projetosMes = await Metrics.totalMesEspecifico(f.id, d.getFullYear(), d.getMonth());
+      const metaMes = atual.meta * 4.345;
       return {
         usuario: f,
-        emFerias: atual.emFerias,
-        projetosSemana: atual.projetos,
-        metaSemana: atual.meta,
-        pctMetaSemana: atual.pctMeta,
-        projetosMes,
-        metaMes,
-        pctMetaMes,
+        emFerias: false,
+        projetos: projetosMes,
+        meta: metaMes,
+        pctMeta: metaMes > 0 ? projetosMes / metaMes : 0,
         nota: atual.nota,
       };
     })
@@ -86,18 +180,18 @@ async function renderDashboardEquipe(cont) {
   linhas.sort((a, b) => {
     if (a.emFerias && !b.emFerias) return 1;
     if (!a.emFerias && b.emFerias) return -1;
-    return (b.pctMetaSemana || 0) - (a.pctMetaSemana || 0);
+    return (b.pctMeta || 0) - (a.pctMeta || 0);
   });
 
   const medalhas = ['🥇', '🥈', '🥉'];
   const dadosGrafico = linhas.map((l) => ({
     label: primeiroNome(l.usuario.nome),
-    value: l.emFerias ? 0 : Math.round((l.pctMetaSemana || 0) * 100),
+    value: l.emFerias ? 0 : Math.round((l.pctMeta || 0) * 100),
   }));
 
   cont.innerHTML = `
     <div class="card">
-      <h3 class="section-title" style="font-size:16px; margin-bottom:14px">% da Meta desta semana, por funcionário</h3>
+      <h3 class="section-title" style="font-size:16px; margin-bottom:14px">% da Meta no período, por funcionário</h3>
       <div id="grafico-equipe"></div>
     </div>
 
@@ -111,18 +205,17 @@ async function renderDashboardEquipe(cont) {
               <div class="row__title">${posicao} ${escapeHtml(l.usuario.nome)}</div>
               ${
                 l.emFerias
-                  ? '<div class="row__meta">🏖️ De férias nesta semana</div>'
-                  : `<div class="row__meta">Semana: ${l.projetosSemana} / ${l.metaSemana.toFixed(1)} projetos · ${(l.pctMetaSemana * 100).toFixed(0)}% da meta</div>
-                     <div class="row__meta">Mês: ${l.projetosMes} / ${l.metaMes.toFixed(0)} projetos · ${(l.pctMetaMes * 100).toFixed(0)}% da meta</div>`
+                  ? '<div class="row__meta">🏖️ De férias neste período</div>'
+                  : `<div class="row__meta">${l.projetos} / ${l.meta.toFixed(1)} projetos · ${(l.pctMeta * 100).toFixed(0)}% da meta</div>`
               }
             </div>
-            <div>${l.emFerias ? '' : `<span class="badge ${l.pctMetaSemana >= 1 ? 'badge--ok' : l.pctMetaSemana >= 0.7 ? 'badge--warn' : 'badge--danger'}">Nota ${l.nota.toFixed(0)}</span>`}</div>
+            <div>${l.emFerias ? '' : `<span class="badge ${l.pctMeta >= 1 ? 'badge--ok' : l.pctMeta >= 0.7 ? 'badge--warn' : 'badge--danger'}">Nota ${l.nota.toFixed(0)}</span>`}</div>
           </div>`;
         })
         .join('')}
     </div>
 
-    <div class="row__meta" style="margin-top:14px; text-align:center">Meta mensal é uma aproximação (meta semanal × 4,345 semanas).</div>
+    ${modoMes ? '<div class="row__meta" style="margin-top:14px; text-align:center">Meta do mês é uma aproximação (meta semanal × 4,345 semanas).</div>' : ''}
   `;
 
   document.getElementById('grafico-equipe').innerHTML = graficoBarrasSVG(dadosGrafico, 100, '%');
