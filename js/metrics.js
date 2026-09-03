@@ -134,18 +134,20 @@ const Metrics = {
     return { indice, inicio, fim, projetos, prazo, atraso, erros, errosNovos, pctPrazo, nota, emFerias };
   },
 
-  /* Meta da semana `indice` = média de Projetos de TODAS as semanas
-     anteriores (0 até indice-1), pulando semanas de férias, vezes
-     (1+crescimento) — igual à planilha (que usa AVERAGE(C2:C[n-1])),
-     só que a planilha não tinha a regra de pular férias. */
+  /* Meta da semana `indice` = média de Projetos das ÚLTIMAS 4 semanas
+     (pulando semanas de férias), vezes (1+crescimento). Nas primeiras
+     semanas (antes de existirem 4 anteriores), usa quantas houver —
+     igual à planilha, que usa AVERAGE(C[n-4]:C[n-1]) a partir da 5ª
+     semana e uma janela crescente antes disso. */
   async calcularMetaPorIndice(eventos, indice, pesos, feriasDoFunc = []) {
     if (indice <= 0) return pesos.meta_minima;
 
+    const inicioJanela = Math.max(0, indice - 4);
     let soma = 0;
     let contadas = 0;
-    for (let i = 0; i < indice; i++) {
+    for (let i = inicioJanela; i < indice; i++) {
       const s = await this.calcularSemanaPorIndice(eventos, i, pesos, feriasDoFunc);
-      if (s.emFerias) continue;
+      if (s.emFerias) continue; // semana de férias não conta
       soma += s.projetos;
       contadas++;
     }

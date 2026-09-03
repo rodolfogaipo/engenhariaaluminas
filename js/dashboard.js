@@ -298,15 +298,20 @@ function rotuloSemana(ts) {
 }
 
 /* Gráfico de barras simples em SVG puro — sem biblioteca externa,
-   funciona 100% offline e segue as cores do app. */
-function graficoBarrasSVG(dados, valorMax, sufixo) {
+   funciona 100% offline e segue as cores do app. Largura travada
+   (max-width) pra não esticar demais em telas largas, e escala
+   dinâmica pra números acima de 100% (ex: %Meta) não cortarem. */
+function graficoBarrasSVG(dados, valorMaxSugerido, sufixo) {
   const largura = 320;
-  const altura = 150;
+  const altura = 130;
   const padTopo = 20;
-  const padBase = 24;
+  const padBase = 22;
   const alturaUtil = altura - padTopo - padBase;
   const gap = 10;
   const larguraBarra = (largura - gap * (dados.length + 1)) / Math.max(dados.length, 1);
+
+  const maiorValor = Math.max(0, ...dados.map((d) => d.value));
+  const valorMax = Math.max(valorMaxSugerido, maiorValor) * 1.18; // folga pro número não cortar
 
   const barras = dados
     .map((d, i) => {
@@ -315,11 +320,11 @@ function graficoBarrasSVG(dados, valorMax, sufixo) {
       const y = padTopo + (alturaUtil - h);
       return `
         <rect x="${x}" y="${y}" width="${larguraBarra}" height="${Math.max(h, 2)}" rx="4" fill="var(--brand-700)" />
-        <text x="${x + larguraBarra / 2}" y="${y - 6}" text-anchor="middle" font-size="10" fill="var(--ink-soft)" font-family="var(--font-body)">${Math.round(d.value)}${sufixo || ''}</text>
-        <text x="${x + larguraBarra / 2}" y="${altura - 6}" text-anchor="middle" font-size="9" fill="var(--ink-faint)" font-family="var(--font-body)">${d.label}</text>
+        <text x="${x + larguraBarra / 2}" y="${Math.max(y - 6, 11)}" text-anchor="middle" font-size="10" fill="var(--ink-soft)" font-family="var(--font-body)">${Math.round(d.value)}${sufixo || ''}</text>
+        <text x="${x + larguraBarra / 2}" y="${altura - 5}" text-anchor="middle" font-size="9" fill="var(--ink-faint)" font-family="var(--font-body)">${d.label}</text>
       `;
     })
     .join('');
 
-  return `<svg viewBox="0 0 ${largura} ${altura}" style="width:100%; height:auto; display:block">${barras}</svg>`;
+  return `<svg viewBox="0 0 ${largura} ${altura}" style="width:100%; max-width:380px; height:auto; display:block; margin:0 auto">${barras}</svg>`;
 }
