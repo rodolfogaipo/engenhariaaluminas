@@ -161,8 +161,24 @@ const Metrics = {
     return { semanas, atual, tendencia: tend };
   },
 
-  /* números de mês/ano — soma simples de projetos concluídos no
-     período, útil pros cartões do Dashboard */
+  /* números de mês/ano — soma de projetos concluídos no PERÍODO
+     CORRENTE (mês civil, do dia 1 até hoje / ano civil, de 1º de
+     janeiro até hoje), não uma janela de "últimos 30/365 dias" */
+  async totalMesCalendario(funcionarioId, referenciaTs = Date.now()) {
+    const eventos = await this.eventosConcluidosDoFuncionario(funcionarioId);
+    const agora = new Date(referenciaTs);
+    const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1).getTime();
+    return eventos.filter((e) => e.dataFinal >= inicioMes && e.dataFinal <= referenciaTs).length;
+  },
+
+  async totalAnoCalendario(funcionarioId, referenciaTs = Date.now()) {
+    const eventos = await this.eventosConcluidosDoFuncionario(funcionarioId);
+    const agora = new Date(referenciaTs);
+    const inicioAno = new Date(agora.getFullYear(), 0, 1).getTime();
+    return eventos.filter((e) => e.dataFinal >= inicioAno && e.dataFinal <= referenciaTs).length;
+  },
+
+  /* mantido para compatibilidade — janela corrida de N dias */
   async totalPeriodo(funcionarioId, dias) {
     const eventos = await this.eventosConcluidosDoFuncionario(funcionarioId);
     const agora = Date.now();

@@ -66,7 +66,7 @@ async function renderDashboardEquipe(cont) {
     funcionarios.map(async (f) => {
       const resumo = await Metrics.resumoSemanal(f.id, 1);
       const atual = resumo.atual;
-      const projetosMes = await Metrics.totalPeriodo(f.id, 30);
+      const projetosMes = await Metrics.totalMesCalendario(f.id);
       const metaMes = atual.meta * 4.345; // média de semanas por mês (aproximado)
       const pctMetaMes = metaMes > 0 ? projetosMes / metaMes : 0;
       return {
@@ -144,8 +144,8 @@ async function renderDashboardIndividual(view, userId, nomeExibicao, subtitulo, 
   `;
 
   const resumo = await Metrics.resumoSemanal(userId, 6);
-  const mensal = await Metrics.totalPeriodo(userId, 30);
-  const anual = await Metrics.totalPeriodo(userId, 365);
+  const mensal = await Metrics.totalMesCalendario(userId);
+  const anual = await Metrics.totalAnoCalendario(userId);
   const atual = resumo.atual;
   const semTrabalhoNenhum = resumo.semanas.every((s) => s.projetos === 0) && mensal === 0 && anual === 0;
 

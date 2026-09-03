@@ -11,6 +11,18 @@
 const SeedImport = {
   FUNCIONARIOS_ESPERADOS: ['Máyra', 'Marco Túlio', 'Leandrinho', 'Administrador'],
 
+  // Nome como aparece na planilha → nome real já cadastrado no app.
+  // Evita recriar os apelidos como usuários separados numa nova importação.
+  NOME_REAL: {
+    'Máyra': 'Máyra Fernada Amaral de Souza',
+    'Marco Túlio': 'Marco Túlio Nascimento da Costa',
+    'Leandrinho': 'Kauan Gustavo de Jesus Silva',
+  },
+
+  nomeReal(nomeDaPlanilha) {
+    return this.NOME_REAL[nomeDaPlanilha] || nomeDaPlanilha;
+  },
+
   async jaImportado() {
     const flag = await DB.get('config', 'planilha_importada_em');
     return !!flag;
@@ -30,7 +42,8 @@ const SeedImport = {
     usuarios.forEach((u) => (porNome[u.nome] = u));
 
     const novos = [];
-    for (const nome of this.FUNCIONARIOS_ESPERADOS) {
+    for (const apelido of this.FUNCIONARIOS_ESPERADOS) {
+      const nome = this.nomeReal(apelido);
       if (porNome[nome]) continue;
       const login = this.slug(nome);
       const senhaHash = await dbUtil.sha256('123456');
@@ -47,7 +60,7 @@ const SeedImport = {
       porNome[nome] = novo;
     }
     if (novos.length > 0) await DB.putMany('usuarios', novos);
-    return porNome; // nome -> registro do usuário
+    return porNome; // nome real -> registro do usuário
   },
 
   async importar(onProgresso) {
@@ -62,7 +75,7 @@ const SeedImport = {
     onProgresso?.(`Preparando ${dados.servicos.length} serviços…`);
     const numeroPedidoParaCnpId = {};
     const registrosServicos = dados.servicos.map((s) => {
-      const usuario = usuariosPorNome[s.funcionarioNome];
+      const usuario = usuariosPorNome[this.nomeReal(s.funcionarioNome)];
       const id = dbUtil.uid();
       if (s.tipo === 'CNP' && s.numeroPedido) {
         numeroPedidoParaCnpId[s.numeroPedido] = id;
@@ -80,10 +93,11 @@ const SeedImport = {
         catalogoItemId: null,
         acao: null,
         funcionarioId: usuario ? usuario.id : null,
-        funcionarioNome: s.funcionarioNome,
+        funcionarioNome: this.nomeReal(s.funcionarioNome),
         aprovado: 'aprovado',
-        dataAprovacao: s.dataAprovacao || s.dataFinal || s.criadoEm || Date.now(),
-        criadoEm: s.criadoEm || Date.now(),
+        dataAprovacao: s.dataAprovacao || s.dataFinal || s.criadoEm || null,
+        criadoEm: s.criadoEm || s.dataProgramada || s.dataFinal || null,
+        semDataOriginal: !s.criadoEm,
         concluidoInformadoEm: temFinal ? s.dataFinal : null,
         validadoPeloAdmin: temFinal,
         validadoEm: temFinal ? s.dataFinal : null,
@@ -98,8 +112,8 @@ const SeedImport = {
 
     onProgresso?.(`Preparando ${dados.planoCorte.length} registros de Plano de Corte…`);
     const registrosCorte = dados.planoCorte.map((p) => {
-      const usuCNP = usuariosPorNome[p.funcionarioCNPNome];
-      const usuCorte = usuariosPorNome[p.funcionarioCorteNome];
+      const usuCNP = usuariosPorNome[this.nomeReal(p.funcionarioCNPNome)];
+      const usuCorte = usuariosPorNome[this.nomeReal(p.funcionarioCorteNome)];
       return {
         id: dbUtil.uid(),
         cnpServicoId: numeroPedidoParaCnpId[p.numeroPedido] || null,
@@ -108,15 +122,15 @@ const SeedImport = {
         dataChegada: p.dataChegada || null,
         dataProgramada: p.dataProgramada || null,
         funcionarioCNPId: usuCNP ? usuCNP.id : null,
-        funcionarioCNPNome: p.funcionarioCNPNome || null,
+        funcionarioCNPNome: p.funcionarioCNPNome ? this.nomeReal(p.funcionarioCNPNome) : null,
         status: p.status,
         dataInicioCorte: p.dataInicioCorte || null,
         dataFinalCorte: p.dataFinalCorte || null,
         funcionarioCorteId: usuCorte ? usuCorte.id : null,
-        funcionarioCorteNome: p.funcionarioCorteNome || null,
+        funcionarioCorteNome: p.funcionarioCorteNome ? this.nomeReal(p.funcionarioCorteNome) : null,
         aprovado: 'aprovado',
-        dataAprovacao: p.dataFinalCorte || p.dataChegada || Date.now(),
-        criadoEm: p.dataChegada || Date.now(),
+        dataAprovacao: p.dataFinalCorte || p.dataChegada || null,
+        criadoEm: p.dataChegada || null,
         importadoDaPlanilha: true,
       };
     });
@@ -133,6 +147,21 @@ const SeedImport = {
 
     onProgresso?.('Concluído!');
     return { totalServicos: registrosServicos.length, totalPlanoCorte: registrosCorte.length };
+  },
+
+  async remover(onProgresso) {
+    onProgresso?.('Removendo serviços importados…');
+    const servicos = await DB.getAll('servicos');
+    for (const s of servicos.filter((s) => s.importadoDaPlanilha)) {
+      await DB.delete('servicos', s.id);
+    }
+    onProgresso?.('Removendo Plano de Corte importado…');
+    const planoCorte = await DB.getAll('plano_corte');
+    for (const p of planoCorte.filter((p) => p.importadoDaPlanilha)) {
+      await DB.delete('plano_corte', p.id);
+    }
+    await DB.delete('config', 'planilha_importada_em');
+    onProgresso?.('Removido.');
   },
 };
 

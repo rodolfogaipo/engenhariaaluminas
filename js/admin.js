@@ -73,7 +73,10 @@ async function renderAdminMais(cont) {
           : ''
       }
       <div id="import-status" class="row__meta" style="margin-bottom:10px"></div>
-      <button class="btn ${jaImportado ? 'btn--ghost' : 'btn--primary'}" id="btn-importar-planilha">${jaImportado ? 'Importar de novo (duplica os dados)' : 'Importar dados da planilha'}</button>
+      <div style="display:flex; gap:10px; flex-wrap:wrap">
+        <button class="btn ${jaImportado ? 'btn--ghost' : 'btn--primary'}" id="btn-importar-planilha">${jaImportado ? 'Importar de novo (duplica os dados)' : 'Importar dados da planilha'}</button>
+        ${jaImportado ? '<button class="btn btn--danger" id="btn-remover-importados">Remover dados importados</button>' : ''}
+      </div>
     </div>
 
     <div class="card" style="margin-top:16px">
@@ -115,6 +118,17 @@ async function renderAdminMais(cont) {
       btn.disabled = false;
     }
   });
+
+  const btnRemover = document.getElementById('btn-remover-importados');
+  if (btnRemover) {
+    btnRemover.addEventListener('click', async () => {
+      if (!confirm('Isso remove TODOS os serviços e registros de Plano de Corte importados da planilha. Continuar?')) return;
+      const statusEl = document.getElementById('import-status');
+      btnRemover.disabled = true;
+      await SeedImport.remover((msg) => (statusEl.textContent = msg));
+      renderAdmin(document.getElementById('view'));
+    });
+  }
 }
 
 /* ---------------- USUÁRIOS ---------------- */
