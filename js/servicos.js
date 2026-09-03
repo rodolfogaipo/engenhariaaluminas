@@ -174,6 +174,16 @@ async function atualizarListaServicos(view) {
                   : ''
               }
               ${s.dataFinal ? `<div class="row__meta">Erros: ${s.erros || 0} · Erros novos: ${s.errosNovos || 0}</div>` : ''}
+              ${
+                s.anexos && s.anexos.length
+                  ? `<div class="row__meta" style="margin-top:4px">${s.anexos
+                      .map(
+                        (a) =>
+                          `<a href="${a.dataUrl}" download="${escapeHtml(a.nome)}" style="color:var(--brand-700); font-weight:600; text-decoration:underline; margin-right:12px">${a.tipo === 'pdf' ? '📄' : '🖼️'} ${escapeHtml(a.nome)}</a>`
+                      )
+                      .join('')}</div>`
+                  : ''
+              }
             </div>
             <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end">
               ${statusBadge}
@@ -265,6 +275,112 @@ async function atualizarListaServicos(view) {
   });
 }
 
+function renderListaAnexosForm(view) {
+  const st = ServicosView.formState;
+  const cont = document.getElementById('lista-anexos-form');
+  if (!cont) return;
+
+  if (!st.anexos || st.anexos.length === 0) {
+    cont.innerHTML = '<div class="row__meta">Nenhum anexo ainda.</div>';
+    return;
+  }
+
+  cont.innerHTML = st.anexos
+    .map(
+      (a) => `
+      <div class="row" style="padding:8px 0">
+        <div class="row__main">
+          <div class="row__title" style="font-size:13.5px">${a.tipo === 'pdf' ? '📄' : '🖼️'} ${escapeHtml(a.nome)}</div>
+          <div class="row__meta">${formatarTamanhoArquivo(a.tamanho)}</div>
+        </div>
+        <button class="btn btn--danger" data-remover-anexo="${a.id}" style="padding:5px 10px; font-size:12px">Remover</button>
+      </div>`
+    )
+    .join('');
+
+  cont.querySelectorAll('[data-remover-anexo]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      st.anexos = st.anexos.filter((a) => a.id !== btn.dataset.removerAnexo);
+      renderListaAnexosForm(view);
+    });
+  });
+}
+
+function formatarTamanhoArquivo(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const TAMANHO_MAX_ANEXO = 15 * 1024 * 1024; // 15MB por arquivo
+
+function arquivoParaAnexo(file) {
+  return new Promise((resolve, reject) => {
+    if (file.size > TAMANHO_MAX_ANEXO) {
+      reject(new Error('arquivo maior que 15MB'));
+      return;
+    }
+
+    const ehImagem = file.type.startsWith('image/');
+    const ehPdf = file.type === 'application/pdf';
+    if (!ehImagem && !ehPdf) {
+      reject(new Error('só PDF ou imagem são aceitos'));
+      return;
+    }
+
+    if (ehPdf) {
+      const reader = new FileReader();
+      reader.onload = () =>
+        resolve({
+          id: dbUtil.uid(),
+          nome: file.name,
+          tipo: 'pdf',
+          dataUrl: reader.result,
+          tamanho: file.size,
+          criadoEm: Date.now(),
+        });
+      reader.onerror = () => reject(new Error('falha ao ler o arquivo'));
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    // imagem: reduz pra no máximo 1600px no lado maior, sem perder
+    // qualidade suficiente pra servir de referência
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        const MAX = 1600;
+        if (width > height && width > MAX) {
+          height = Math.round((height * MAX) / width);
+          width = MAX;
+        } else if (height > MAX) {
+          width = Math.round((width * MAX) / height);
+          height = MAX;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        resolve({
+          id: dbUtil.uid(),
+          nome: file.name,
+          tipo: 'imagem',
+          dataUrl,
+          tamanho: Math.round((dataUrl.length * 3) / 4),
+          criadoEm: Date.now(),
+        });
+      };
+      img.onerror = () => reject(new Error('não consegui abrir essa imagem'));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error('falha ao ler o arquivo'));
+    reader.readAsDataURL(file);
+  });
+}
+
 function Const_normaliza(s) {
   return (s || '').toString().trim().toLowerCase();
 }
@@ -286,6 +402,7 @@ function criarEstadoFormularioVazio() {
     funcionarioId: null, // atribuição feita pelo Admin (opcional)
     dataInicioAdmin: '',
     dataFinalAdmin: '',
+    anexos: [],
     erro: '',
   };
 }
@@ -312,6 +429,7 @@ function criarEstadoFormularioEdicao(registro) {
     funcionarioId: registro.funcionarioId || null,
     dataInicioAdmin: dataParaInputDate(registro.iniciadoEm),
     dataFinalAdmin: dataParaInputDate(registro.dataFinal),
+    anexos: registro.anexos ? [...registro.anexos] : [],
     erro: '',
   };
 }
@@ -385,6 +503,16 @@ async function renderServicoForm(view) {
       }
 
       ${
+        ehAdmin
+          ? `<div class="field">
+              <label for="f-anexos">Anexos — PDF ou imagem (opcional)</label>
+              <input id="f-anexos" type="file" accept="application/pdf,image/*" multiple />
+              <div id="lista-anexos-form" style="margin-top:10px"></div>
+            </div>`
+          : ''
+      }
+
+      ${
         ehCorteComAproveitamento
           ? `<div class="field">
               <label for="f-percentual">% Aproveitamento (informado pelo programa de corte)</label>
@@ -435,6 +563,26 @@ async function renderServicoForm(view) {
       if (inicioEl) inicioEl.addEventListener('input', (ev) => (st.dataInicioAdmin = ev.target.value));
       if (fimEl) fimEl.addEventListener('input', (ev) => (st.dataFinalAdmin = ev.target.value));
     }
+
+    const anexosInput = document.getElementById('f-anexos');
+    if (anexosInput) {
+      anexosInput.addEventListener('change', async (ev) => {
+        const arquivos = Array.from(ev.target.files || []);
+        anexosInput.disabled = true;
+        for (const arquivo of arquivos) {
+          try {
+            const anexo = await arquivoParaAnexo(arquivo);
+            st.anexos.push(anexo);
+          } catch (e) {
+            st.erro = `Não consegui adicionar "${arquivo.name}": ${e.message}`;
+          }
+        }
+        anexosInput.value = '';
+        anexosInput.disabled = false;
+        renderServicoForm(view);
+      });
+    }
+    renderListaAnexosForm(view);
   }
 
   if (ehCorteComAproveitamento) {
@@ -650,6 +798,7 @@ async function salvarServico(view) {
     registro.dataProgramada = st.dataProgramada ? Const.inputDateParaTimestamp(st.dataProgramada) : null;
     registro.observacoes = st.observacoes || '';
     if (ehCorte) registro.percentualAproveitamento = percentual;
+    if (user.tipo === 'admin') registro.anexos = st.anexos;
 
     if (user.tipo === 'admin') {
       // reatribuição de funcionário responsável
@@ -718,6 +867,7 @@ async function salvarServico(view) {
     funcionarioId: funcionarioIdFinal,
     funcionarioNome: funcionarioNomeFinal,
     iniciadoEm: iniciadoEmFinal,
+    anexos: user.tipo === 'admin' ? st.anexos : [],
     aprovado: user.tipo === 'admin' ? 'aprovado' : 'pendente',
     dataAprovacao: user.tipo === 'admin' ? Date.now() : null,
     criadoEm: Date.now(),
