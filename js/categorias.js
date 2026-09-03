@@ -84,6 +84,29 @@ const Categorias = {
     return registro;
   },
 
+  async atualizar(id, { nome, temPorcentagem }) {
+    const cat = await DB.get('categorias_servico', id);
+    if (!cat) throw new Error('Categoria não encontrada.');
+
+    // categorias padrão (CNP, Cadastro X, Corte Tecido, etc.) têm o
+    // nome travado — várias partes do app dependem desse nome exato.
+    // Só a opção de % pode mudar nelas.
+    if (!cat.sistema && nome !== undefined) {
+      const nomeLimpo = (nome || '').trim();
+      if (!nomeLimpo) throw new Error('Digite o nome da categoria.');
+      if (nomeLimpo.toLowerCase() !== cat.nome.toLowerCase()) {
+        const itens = await DB.getAll('categorias_servico');
+        if (itens.some((c) => c.id !== id && c.nome.toLowerCase() === nomeLimpo.toLowerCase())) {
+          throw new Error('Já existe uma categoria com esse nome.');
+        }
+        cat.nome = nomeLimpo;
+      }
+    }
+    cat.temPorcentagem = !!temPorcentagem;
+    await DB.put('categorias_servico', cat);
+    return cat;
+  },
+
   async remover(id) {
     const c = await DB.get('categorias_servico', id);
     if (c && c.sistema) throw new Error('Categorias padrão do sistema não podem ser excluídas.');

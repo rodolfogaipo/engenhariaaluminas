@@ -55,9 +55,126 @@ async function renderDashboard(view) {
 
 /* ---------------- APROVEITAMENTO POR CATEGORIA (Admin) ---------------- */
 
-async function renderDashboardAproveitamento(cont) {
-  cont.innerHTML = `<div class="wip">${ICONS.wip}<b>Calculando…</b></div>`;
+const DashboardAproveitamentoView = {
+  periodoTipo: 'semana', // 'semana' | 'mes' | 'ano'
+  dataReferencia: Date.now(),
+};
 
+async function renderDashboardAproveitamento(cont) {
+  const st = DashboardAproveitamentoView;
+
+  cont.innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
+        <div style="display:flex; gap:8px">
+          <button class="btn ${st.periodoTipo === 'semana' ? 'btn--primary' : 'btn--ghost'}" id="btn-aprov-semana" style="padding:8px 12px; font-size:13px">Semana</button>
+          <button class="btn ${st.periodoTipo === 'mes' ? 'btn--primary' : 'btn--ghost'}" id="btn-aprov-mes" style="padding:8px 12px; font-size:13px">Mês</button>
+          <button class="btn ${st.periodoTipo === 'ano' ? 'btn--primary' : 'btn--ghost'}" id="btn-aprov-ano" style="padding:8px 12px; font-size:13px">Ano</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px">
+          <button class="topbar__icon-btn" id="btn-aprov-anterior" style="background:var(--paper-dim)" aria-label="Período anterior">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <span id="rotulo-aprov" style="font-weight:600; font-size:14px; min-width:130px; text-align:center"></span>
+          <button class="topbar__icon-btn" id="btn-aprov-proximo" style="background:var(--paper-dim)" aria-label="Próximo período">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div id="aprov-conteudo"><div class="wip">${ICONS.wip}<b>Calculando…</b></div></div>
+  `;
+
+  document.getElementById('rotulo-aprov').textContent = rotuloPeriodoAprov();
+
+  document.getElementById('btn-aprov-semana').addEventListener('click', () => {
+    st.periodoTipo = 'semana';
+    renderDashboardAproveitamento(cont);
+  });
+  document.getElementById('btn-aprov-mes').addEventListener('click', () => {
+    st.periodoTipo = 'mes';
+    renderDashboardAproveitamento(cont);
+  });
+  document.getElementById('btn-aprov-ano').addEventListener('click', () => {
+    st.periodoTipo = 'ano';
+    renderDashboardAproveitamento(cont);
+  });
+  document.getElementById('btn-aprov-anterior').addEventListener('click', () => {
+    navegarPeriodoAprov(-1);
+    renderDashboardAproveitamento(cont);
+  });
+  const btnProximo = document.getElementById('btn-aprov-proximo');
+  btnProximo.disabled = await periodoAprovEhAtualOuFuturo();
+  btnProximo.addEventListener('click', () => {
+    navegarPeriodoAprov(1);
+    renderDashboardAproveitamento(cont);
+  });
+
+  await renderAproveitamentoConteudo(document.getElementById('aprov-conteudo'));
+}
+
+function rotuloPeriodoAprov() {
+  const st = DashboardAproveitamentoView;
+  const d = new Date(st.dataReferencia);
+  if (st.periodoTipo === 'ano') return String(d.getFullYear());
+  if (st.periodoTipo === 'mes') return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  const pad = (n) => String(n).padStart(2, '0');
+  const diaSemana = d.getDay();
+  const inicio = new Date(d);
+  inicio.setDate(d.getDate() - diaSemana);
+  const fim = new Date(inicio);
+  fim.setDate(inicio.getDate() + 6);
+  return `${pad(inicio.getDate())}/${pad(inicio.getMonth() + 1)} a ${pad(fim.getDate())}/${pad(fim.getMonth() + 1)}`;
+}
+
+function navegarPeriodoAprov(direcao) {
+  const st = DashboardAproveitamentoView;
+  const d = new Date(st.dataReferencia);
+  if (st.periodoTipo === 'ano') {
+    d.setFullYear(d.getFullYear() + direcao);
+  } else if (st.periodoTipo === 'mes') {
+    d.setDate(1);
+    d.setMonth(d.getMonth() + direcao);
+  } else {
+    d.setDate(d.getDate() + direcao * 7);
+  }
+  st.dataReferencia = d.getTime();
+}
+
+async function periodoAprovEhAtualOuFuturo() {
+  const st = DashboardAproveitamentoView;
+  const d = new Date(st.dataReferencia);
+  const hoje = new Date();
+  if (st.periodoTipo === 'ano') return d.getFullYear() === hoje.getFullYear();
+  if (st.periodoTipo === 'mes') return d.getFullYear() === hoje.getFullYear() && d.getMonth() === hoje.getMonth();
+  // semana: compara início da semana (domingo) de ambas as datas
+  const inicioSemana = (data) => {
+    const x = new Date(data);
+    x.setDate(x.getDate() - x.getDay());
+    x.setHours(0, 0, 0, 0);
+    return x.getTime();
+  };
+  return inicioSemana(st.dataReferencia) === inicioSemana(hoje.getTime());
+}
+
+function intervaloPeriodoAprov() {
+  const st = DashboardAproveitamentoView;
+  const d = new Date(st.dataReferencia);
+  if (st.periodoTipo === 'ano') {
+    return { inicio: new Date(d.getFullYear(), 0, 1).getTime(), fim: new Date(d.getFullYear() + 1, 0, 1).getTime() };
+  }
+  if (st.periodoTipo === 'mes') {
+    return { inicio: new Date(d.getFullYear(), d.getMonth(), 1).getTime(), fim: new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime() };
+  }
+  const inicio = new Date(d);
+  inicio.setDate(d.getDate() - d.getDay());
+  inicio.setHours(0, 0, 0, 0);
+  const fim = new Date(inicio);
+  fim.setDate(inicio.getDate() + 7);
+  return { inicio: inicio.getTime(), fim: fim.getTime() };
+}
+
+async function renderAproveitamentoConteudo(cont) {
   const categorias = await Categorias.listar();
   const comAproveitamento = categorias.filter((c) => c.temPorcentagem);
 
@@ -72,28 +189,25 @@ async function renderDashboardAproveitamento(cont) {
     return;
   }
 
+  const { inicio, fim } = intervaloPeriodoAprov();
   const linhas = await Promise.all(
     comAproveitamento.map(async (c) => ({
       categoria: c.nome,
-      resumo: await Metrics.mediaAproveitamentoResumo(c.nome),
+      resultado: await Metrics.mediaAproveitamento(c.nome, inicio, fim),
     }))
   );
 
-  const fmt = (r) => (r.media == null ? '—' : `${r.media.toFixed(1)}% (${r.quantidade})`);
-
   cont.innerHTML = `
-    <p class="section-sub" style="margin-top:0">Média de % Aproveitamento por categoria — o número entre parênteses é a quantidade de cortes no período.</p>
+    <p class="section-sub" style="margin-top:0">Média de % Aproveitamento no período — o número entre parênteses é a quantidade de cortes.</p>
     <div class="card" style="padding:0">
       ${linhas
         .map(
           (l) => `
-        <div class="row" style="padding:14px 18px; flex-wrap:wrap; gap:6px 18px">
-          <div class="row__main" style="flex:1 1 140px">
+        <div class="row" style="padding:14px 18px">
+          <div class="row__main">
             <div class="row__title">${escapeHtml(l.categoria)}</div>
           </div>
-          <div style="flex:1 1 80px"><div class="row__meta">Semana</div><div class="row__title" style="font-size:14px">${fmt(l.resumo.semana)}</div></div>
-          <div style="flex:1 1 80px"><div class="row__meta">Mês</div><div class="row__title" style="font-size:14px">${fmt(l.resumo.mes)}</div></div>
-          <div style="flex:1 1 80px"><div class="row__meta">Ano</div><div class="row__title" style="font-size:14px">${fmt(l.resumo.ano)}</div></div>
+          <div class="row__title" style="font-size:15px">${l.resultado.media == null ? '—' : `${l.resultado.media.toFixed(1)}% (${l.resultado.quantidade})`}</div>
         </div>`
         )
         .join('')}

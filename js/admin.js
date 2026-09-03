@@ -515,6 +515,8 @@ async function renderAdminAnotacaoForm(cont, view) {
 
 const AdminCategoriasView = {
   formAberto: false,
+  editId: null,
+  ehSistema: false,
   nome: '',
   temPorcentagem: false,
   erro: '',
@@ -535,14 +537,15 @@ async function renderAdminCategorias(cont, view) {
       ${categorias
         .map(
           (c) => `
-        <div class="row" style="padding:14px 18px">
+        <div class="row" style="padding:14px 18px; flex-wrap:wrap; gap:8px">
           <div class="row__main">
             <div class="row__title">${escapeHtml(c.nome)}</div>
-            <div class="row__meta">${c.padrao ? 'Categoria padrão' : 'Criada por você'}</div>
+            <div class="row__meta">${c.sistema ? 'Categoria padrão' : 'Criada por você'}</div>
           </div>
           <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto">
             <span class="badge ${c.temPorcentagem ? 'badge--brand' : 'badge--idle'}">${c.temPorcentagem ? 'Tem %' : 'Sem %'}</span>
-            ${!c.padrao ? `<button class="btn btn--danger" data-excluir-cat="${c.id}" style="padding:6px 12px; font-size:13px">Excluir</button>` : ''}
+            <button class="btn btn--ghost" data-editar-cat="${c.id}" style="padding:6px 12px; font-size:13px">Editar</button>
+            ${!c.sistema ? `<button class="btn btn--danger" data-excluir-cat="${c.id}" style="padding:6px 12px; font-size:13px">Excluir</button>` : ''}
           </div>
         </div>`
         )
@@ -552,10 +555,26 @@ async function renderAdminCategorias(cont, view) {
 
   document.getElementById('btn-nova-categoria').addEventListener('click', () => {
     AdminCategoriasView.formAberto = true;
+    AdminCategoriasView.editId = null;
+    AdminCategoriasView.ehSistema = false;
     AdminCategoriasView.nome = '';
     AdminCategoriasView.temPorcentagem = false;
     AdminCategoriasView.erro = '';
     renderAdminCategorias(cont, view);
+  });
+
+  cont.querySelectorAll('[data-editar-cat]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const cat = categorias.find((c) => c.id === btn.dataset.editarCat);
+      if (!cat) return;
+      AdminCategoriasView.formAberto = true;
+      AdminCategoriasView.editId = cat.id;
+      AdminCategoriasView.ehSistema = !!cat.sistema;
+      AdminCategoriasView.nome = cat.nome;
+      AdminCategoriasView.temPorcentagem = !!cat.temPorcentagem;
+      AdminCategoriasView.erro = '';
+      renderAdminCategorias(cont, view);
+    });
   });
 
   cont.querySelectorAll('[data-excluir-cat]').forEach((btn) => {
@@ -573,16 +592,18 @@ async function renderAdminCategorias(cont, view) {
 
 function renderFormCategoria(cont, view) {
   const st = AdminCategoriasView;
+  const editando = !!st.editId;
 
   cont.innerHTML = `
     <div class="card">
-      <h3 class="section-title" style="font-size:17px">Nova Categoria</h3>
+      <h3 class="section-title" style="font-size:17px">${editando ? 'Editar Categoria' : 'Nova Categoria'}</h3>
 
       ${st.erro ? `<div class="auth__error show" style="text-align:left; margin-bottom:14px">${escapeHtml(st.erro)}</div>` : ''}
 
       <div class="field">
         <label for="f-cat-nome-adm">Nome da categoria</label>
-        <input id="f-cat-nome-adm" value="${escapeHtml(st.nome)}" placeholder="Ex: Corte Alumínio" />
+        <input id="f-cat-nome-adm" value="${escapeHtml(st.nome)}" placeholder="Ex: Corte Alumínio" ${st.ehSistema ? 'disabled' : ''} />
+        ${st.ehSistema ? '<div class="row__meta" style="margin-top:6px">O nome de categorias padrão não pode ser alterado — várias partes do app dependem dele.</div>' : ''}
       </div>
 
       <label style="display:flex; align-items:center; gap:8px; margin-bottom:20px; font-size:14px; color:var(--ink-soft)">
@@ -606,7 +627,11 @@ function renderFormCategoria(cont, view) {
 
   document.getElementById('btn-salvar-categoria').addEventListener('click', async () => {
     try {
-      await Categorias.criar(st.nome, st.temPorcentagem);
+      if (editando) {
+        await Categorias.atualizar(st.editId, { nome: st.nome, temPorcentagem: st.temPorcentagem });
+      } else {
+        await Categorias.criar(st.nome, st.temPorcentagem);
+      }
       st.formAberto = false;
       renderAdminCategorias(cont, view);
     } catch (e) {
