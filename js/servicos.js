@@ -86,7 +86,18 @@ async function atualizarListaServicos(view) {
         Const_normaliza(s.funcionarioNome).includes(filtro)
       );
     })
-    .sort((a, b) => b.criadoEm - a.criadoEm);
+    .sort((a, b) => {
+      const prioridadeDe = (s) => {
+        const estado = estadoServico(s);
+        if (estado === 'em_andamento') return 0;
+        if (estado === 'disponivel' && s.funcionarioId) return 1; // Admin já atribuiu um nome
+        if (estado === 'disponivel') return 2; // livre pra qualquer um
+        return 3; // concluído
+      };
+      const diff = prioridadeDe(a) - prioridadeDe(b);
+      if (diff !== 0) return diff;
+      return b.criadoEm - a.criadoEm;
+    });
 
   const listaEl = document.getElementById('lista-servicos');
   if (!listaEl) return;
