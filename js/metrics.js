@@ -219,6 +219,39 @@ const Metrics = {
     return eventos.filter((e) => e.dataFinal >= inicio && e.dataFinal < fim).length;
   },
 
+  /* Média de % Aproveitamento de uma categoria (Corte Tecido, Espuma,
+     Tela, Outline, Couro, ou qualquer categoria custom marcada com
+     temPorcentagem) num intervalo de tempo — usa Data Final. */
+  async mediaAproveitamento(categoria, inicio, fim) {
+    const todos = await DB.getAll('servicos');
+    const doPeriodo = todos.filter(
+      (s) =>
+        s.tipo === categoria &&
+        s.dataFinal &&
+        s.dataFinal >= inicio &&
+        s.dataFinal < fim &&
+        s.percentualAproveitamento != null
+    );
+    if (doPeriodo.length === 0) return { media: null, quantidade: 0 };
+    const soma = doPeriodo.reduce((acc, s) => acc + s.percentualAproveitamento, 0);
+    return { media: soma / doPeriodo.length, quantidade: doPeriodo.length };
+  },
+
+  async mediaAproveitamentoResumo(categoria, referenciaTs = Date.now()) {
+    const indiceSemanaAtual = await this.indiceSemana(referenciaTs);
+    const semana = await this.rangeDaSemanaPorIndice(indiceSemanaAtual);
+    const d = new Date(referenciaTs);
+    const inicioMes = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+    const inicioAno = new Date(d.getFullYear(), 0, 1).getTime();
+
+    const [semanaRes, mesRes, anoRes] = await Promise.all([
+      this.mediaAproveitamento(categoria, semana.inicio, semana.fim),
+      this.mediaAproveitamento(categoria, inicioMes, referenciaTs + 1),
+      this.mediaAproveitamento(categoria, inicioAno, referenciaTs + 1),
+    ]);
+    return { semana: semanaRes, mes: mesRes, ano: anoRes };
+  },
+
   /* mantido para compatibilidade — janela corrida de N dias */
   async totalPeriodo(funcionarioId, dias) {
     const eventos = await this.eventosConcluidosDoFuncionario(funcionarioId);

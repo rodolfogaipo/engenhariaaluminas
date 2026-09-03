@@ -255,11 +255,14 @@ function criarEstadoFormularioEdicao(registro) {
   };
 }
 
+let categoriasCache = [];
+
 async function renderServicoForm(view) {
   const st = ServicosView.formState;
   const editando = !!st.editId;
-  const ehCadastro = !editando && Const.ehTipoCadastro(st.tipo);
-  const ehCorteComAproveitamento = Const.ehTipoCorteComAproveitamento(st.tipo);
+  categoriasCache = await Categorias.listar();
+  const ehCadastro = !editando && !!Categorias.categoriaCadastroDe(categoriasCache, st.tipo);
+  const ehCorteComAproveitamento = Categorias.temPorcentagem(categoriasCache, st.tipo);
 
   view.innerHTML = `
     <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px">
@@ -276,7 +279,7 @@ async function renderServicoForm(view) {
         <label for="f-tipo">Tipo de Serviço</label>
         <select id="f-tipo" ${editando ? 'disabled' : ''}>
           <option value="">Selecione…</option>
-          ${Const.TIPOS_SERVICO.map((t) => `<option value="${t}" ${t === st.tipo ? 'selected' : ''}>${t}</option>`).join('')}
+          ${categoriasCache.map((c) => `<option value="${c.nome}" ${c.nome === st.tipo ? 'selected' : ''}>${c.nome}</option>`).join('')}
         </select>
         ${editando ? '<div class="row__meta" style="margin-top:6px">O tipo não pode ser alterado depois de lançado.</div>' : ''}
       </div>
@@ -364,7 +367,7 @@ function renderBlocoNome(view, ehCadastro) {
     return;
   }
 
-  const categoria = Const.TIPO_SERVICO_PARA_CATALOGO[st.tipo];
+  const categoria = Categorias.categoriaCadastroDe(categoriasCache, st.tipo);
 
   bloco.innerHTML = `
     <div class="field">
@@ -467,7 +470,7 @@ function atualizarBotaoSalvarLabel() {
   const btn = document.getElementById('btn-salvar-servico');
   if (!btn) return;
   const editando = !!st.editId;
-  const ehCadastro = !editando && Const.ehTipoCadastro(st.tipo);
+  const ehCadastro = !editando && !!Categorias.categoriaCadastroDe(categoriasCache, st.tipo);
   btn.textContent = ehCadastro && st.catalogoSelecionado ? 'Registrar atualização' : editando ? 'Salvar alterações' : 'Lançar serviço';
 }
 
@@ -482,8 +485,8 @@ async function salvarServico(view) {
     return renderServicoForm(view);
   }
 
-  const ehCadastro = !editando && Const.ehTipoCadastro(st.tipo);
-  const ehCorte = Const.ehTipoCorteComAproveitamento(st.tipo);
+  const ehCadastro = !editando && !!Categorias.categoriaCadastroDe(categoriasCache, st.tipo);
+  const ehCorte = Categorias.temPorcentagem(categoriasCache, st.tipo);
 
   let nomeFinal = '';
   let catalogoItemId = null;
@@ -495,7 +498,7 @@ async function salvarServico(view) {
       st.erro = 'Digite o nome do item.';
       return renderServicoForm(view);
     }
-    const categoria = Const.TIPO_SERVICO_PARA_CATALOGO[st.tipo];
+    const categoria = Categorias.categoriaCadastroDe(categoriasCache, st.tipo);
 
     if (st.catalogoSelecionado) {
       await Catalog.registrarAtualizacao(st.catalogoSelecionado.id, user, st.observacoes);

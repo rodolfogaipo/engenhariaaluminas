@@ -22,6 +22,7 @@ async function renderAdmin(view) {
 
     <div style="display:flex; gap:8px; margin-bottom:18px; overflow-x:auto">
       <button class="btn ${AdminView.aba === 'usuarios' ? 'btn--primary' : 'btn--ghost'}" data-aba="usuarios">Usuários</button>
+      <button class="btn ${AdminView.aba === 'categorias' ? 'btn--primary' : 'btn--ghost'}" data-aba="categorias">Categorias</button>
       <button class="btn ${AdminView.aba === 'anotacoes' ? 'btn--primary' : 'btn--ghost'}" data-aba="anotacoes">Anotações</button>
       <button class="btn ${AdminView.aba === 'mais' ? 'btn--primary' : 'btn--ghost'}" data-aba="mais">Mais Ferramentas</button>
     </div>
@@ -40,6 +41,8 @@ async function renderAdmin(view) {
   const cont = document.getElementById('admin-conteudo');
   if (AdminView.aba === 'usuarios') {
     await renderAdminUsuarios(cont, view);
+  } else if (AdminView.aba === 'categorias') {
+    await renderAdminCategorias(cont, view);
   } else if (AdminView.aba === 'anotacoes') {
     await renderAdminAnotacoes(cont, view);
   } else {
@@ -503,5 +506,112 @@ async function renderAdminAnotacaoForm(cont, view) {
     await DB.put('anotacoes_admin', registro);
     AdminAnotacoesView.subView = 'lista';
     renderAdminAnotacoes(cont, view);
+  });
+}
+
+/* ---------------- CATEGORIAS DE SERVIÇO ----------------
+   Lista as categorias (padrão + criadas pelo Admin) e permite criar
+   novas, escolhendo se elas terão o indicador de % Aproveitamento. */
+
+const AdminCategoriasView = {
+  formAberto: false,
+  nome: '',
+  temPorcentagem: false,
+  erro: '',
+};
+
+async function renderAdminCategorias(cont, view) {
+  if (AdminCategoriasView.formAberto) {
+    return renderFormCategoria(cont, view);
+  }
+
+  const categorias = await Categorias.listar();
+
+  cont.innerHTML = `
+    <div style="display:flex; justify-content:flex-end; margin-bottom:14px">
+      <button class="btn btn--primary" id="btn-nova-categoria">+ Nova Categoria</button>
+    </div>
+    <div class="card" style="padding:0">
+      ${categorias
+        .map(
+          (c) => `
+        <div class="row" style="padding:14px 18px">
+          <div class="row__main">
+            <div class="row__title">${escapeHtml(c.nome)}</div>
+            <div class="row__meta">${c.padrao ? 'Categoria padrão' : 'Criada por você'}</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto">
+            <span class="badge ${c.temPorcentagem ? 'badge--brand' : 'badge--idle'}">${c.temPorcentagem ? 'Tem %' : 'Sem %'}</span>
+            ${!c.padrao ? `<button class="btn btn--danger" data-excluir-cat="${c.id}" style="padding:6px 12px; font-size:13px">Excluir</button>` : ''}
+          </div>
+        </div>`
+        )
+        .join('')}
+    </div>
+  `;
+
+  document.getElementById('btn-nova-categoria').addEventListener('click', () => {
+    AdminCategoriasView.formAberto = true;
+    AdminCategoriasView.nome = '';
+    AdminCategoriasView.temPorcentagem = false;
+    AdminCategoriasView.erro = '';
+    renderAdminCategorias(cont, view);
+  });
+
+  cont.querySelectorAll('[data-excluir-cat]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Excluir esta categoria? Serviços já lançados com ela continuam existindo, só não vai mais aparecer pra lançar novos.')) return;
+      try {
+        await Categorias.remover(btn.dataset.excluirCat);
+        renderAdminCategorias(cont, view);
+      } catch (e) {
+        alert(e.message);
+      }
+    });
+  });
+}
+
+function renderFormCategoria(cont, view) {
+  const st = AdminCategoriasView;
+
+  cont.innerHTML = `
+    <div class="card">
+      <h3 class="section-title" style="font-size:17px">Nova Categoria</h3>
+
+      ${st.erro ? `<div class="auth__error show" style="text-align:left; margin-bottom:14px">${escapeHtml(st.erro)}</div>` : ''}
+
+      <div class="field">
+        <label for="f-cat-nome-adm">Nome da categoria</label>
+        <input id="f-cat-nome-adm" value="${escapeHtml(st.nome)}" placeholder="Ex: Corte Alumínio" />
+      </div>
+
+      <label style="display:flex; align-items:center; gap:8px; margin-bottom:20px; font-size:14px; color:var(--ink-soft)">
+        <input id="f-cat-porcentagem" type="checkbox" style="width:18px; height:18px" ${st.temPorcentagem ? 'checked' : ''} />
+        Essa categoria tem % de Aproveitamento (aparece o campo ao lançar, e entra no levantamento de aproveitamento)
+      </label>
+
+      <div style="display:flex; gap:10px">
+        <button class="btn btn--ghost" id="btn-cancelar-categoria" style="flex:1">Cancelar</button>
+        <button class="btn btn--primary" id="btn-salvar-categoria" style="flex:2">Salvar</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('btn-cancelar-categoria').addEventListener('click', () => {
+    st.formAberto = false;
+    renderAdminCategorias(cont, view);
+  });
+  document.getElementById('f-cat-nome-adm').addEventListener('input', (ev) => (st.nome = ev.target.value));
+  document.getElementById('f-cat-porcentagem').addEventListener('change', (ev) => (st.temPorcentagem = ev.target.checked));
+
+  document.getElementById('btn-salvar-categoria').addEventListener('click', async () => {
+    try {
+      await Categorias.criar(st.nome, st.temPorcentagem);
+      st.formAberto = false;
+      renderAdminCategorias(cont, view);
+    } catch (e) {
+      st.erro = e.message;
+      renderFormCategoria(cont, view);
+    }
   });
 }

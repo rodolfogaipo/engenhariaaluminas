@@ -22,13 +22,18 @@ async function renderDashboard(view) {
 
   view.innerHTML = `
     <h2 class="section-title">Início</h2>
-    <div style="display:flex; gap:8px; margin-bottom:18px">
+    <div style="display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap">
       <button class="btn ${DashboardAdminView.modo === 'equipe' ? 'btn--primary' : 'btn--ghost'}" id="btn-modo-equipe">Equipe</button>
+      <button class="btn ${DashboardAdminView.modo === 'aproveitamento' ? 'btn--primary' : 'btn--ghost'}" id="btn-modo-aproveitamento">Aproveitamento</button>
       <button class="btn ${DashboardAdminView.modo === 'minha' ? 'btn--primary' : 'btn--ghost'}" id="btn-modo-minha">Minha Produção</button>
     </div>
     <div id="dash-conteudo"></div>
   `;
 
+  document.getElementById('btn-modo-aproveitamento').addEventListener('click', () => {
+    DashboardAdminView.modo = 'aproveitamento';
+    renderDashboard(view);
+  });
   document.getElementById('btn-modo-equipe').addEventListener('click', () => {
     DashboardAdminView.modo = 'equipe';
     renderDashboard(view);
@@ -42,7 +47,58 @@ async function renderDashboard(view) {
   if (DashboardAdminView.modo === 'minha') {
     return renderDashboardIndividual(cont, user.id, user.nome, 'Sua produção pessoal — não entra no comparativo da equipe', true);
   }
+  if (DashboardAdminView.modo === 'aproveitamento') {
+    return renderDashboardAproveitamento(cont);
+  }
   return renderDashboardEquipe(cont);
+}
+
+/* ---------------- APROVEITAMENTO POR CATEGORIA (Admin) ---------------- */
+
+async function renderDashboardAproveitamento(cont) {
+  cont.innerHTML = `<div class="wip">${ICONS.wip}<b>Calculando…</b></div>`;
+
+  const categorias = await Categorias.listar();
+  const comAproveitamento = categorias.filter((c) => c.temPorcentagem);
+
+  if (comAproveitamento.length === 0) {
+    cont.innerHTML = `
+      <div class="card">
+        <div class="empty">
+          <div class="empty__title">Nenhuma categoria com % Aproveitamento</div>
+          <div class="empty__sub">Crie categorias com essa opção marcada em Admin → Categorias.</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const linhas = await Promise.all(
+    comAproveitamento.map(async (c) => ({
+      categoria: c.nome,
+      resumo: await Metrics.mediaAproveitamentoResumo(c.nome),
+    }))
+  );
+
+  const fmt = (r) => (r.media == null ? '—' : `${r.media.toFixed(1)}% (${r.quantidade})`);
+
+  cont.innerHTML = `
+    <p class="section-sub" style="margin-top:0">Média de % Aproveitamento por categoria — o número entre parênteses é a quantidade de cortes no período.</p>
+    <div class="card" style="padding:0">
+      ${linhas
+        .map(
+          (l) => `
+        <div class="row" style="padding:14px 18px; flex-wrap:wrap; gap:6px 18px">
+          <div class="row__main" style="flex:1 1 140px">
+            <div class="row__title">${escapeHtml(l.categoria)}</div>
+          </div>
+          <div style="flex:1 1 80px"><div class="row__meta">Semana</div><div class="row__title" style="font-size:14px">${fmt(l.resumo.semana)}</div></div>
+          <div style="flex:1 1 80px"><div class="row__meta">Mês</div><div class="row__title" style="font-size:14px">${fmt(l.resumo.mes)}</div></div>
+          <div style="flex:1 1 80px"><div class="row__meta">Ano</div><div class="row__title" style="font-size:14px">${fmt(l.resumo.ano)}</div></div>
+        </div>`
+        )
+        .join('')}
+    </div>
+  `;
 }
 
 /* ---------------- COMPARATIVO DE EQUIPE (Admin) ---------------- */
