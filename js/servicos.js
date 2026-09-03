@@ -31,7 +31,7 @@ async function renderServicosLista(view) {
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap">
       <div>
         <h2 class="section-title" style="margin-bottom:2px">Serviços</h2>
-        <p class="section-sub" style="margin:0">${user.tipo === 'admin' ? 'Todos os lançamentos da equipe' : 'Seus lançamentos'}</p>
+        <p class="section-sub" style="margin:0">${user.tipo === 'admin' ? 'Todos os lançamentos da equipe' : 'Disponíveis, seus em andamento, e o histórico concluído'}</p>
       </div>
       <button class="btn btn--primary" id="btn-novo-servico">+ Novo Serviço</button>
     </div>
@@ -58,13 +58,26 @@ async function renderServicosLista(view) {
   await atualizarListaServicos(view);
 }
 
+function estadoServico(s) {
+  if (s.dataFinal) return 'concluido';
+  if (s.iniciadoEm) return 'em_andamento';
+  return 'disponivel';
+}
+
+function servicoVisivelPara(s, userId) {
+  const estado = estadoServico(s);
+  if (estado === 'concluido' || estado === 'disponivel') return true;
+  // em_andamento: só quem está fazendo vê (o admin já vê tudo, tratado à parte)
+  return s.funcionarioId === userId;
+}
+
 async function atualizarListaServicos(view) {
   const user = Auth.current;
   const todos = await DB.getAll('servicos');
 
-  const meus = user.tipo === 'admin' ? todos : todos.filter((s) => s.funcionarioId === user.id);
+  const visiveis = user.tipo === 'admin' ? todos : todos.filter((s) => servicoVisivelPara(s, user.id));
   const filtro = Const_normaliza(ServicosView.filtroTexto);
-  const filtrados = meus
+  const filtrados = visiveis
     .filter((s) => {
       if (!filtro) return true;
       return (
@@ -117,6 +130,20 @@ async function atualizarListaServicos(view) {
             ? `<button class="btn btn--metal" data-marcar-concluido="${s.id}" style="padding:6px 12px; font-size:13px">Marcar como concluído</button>`
             : '';
 
+          const estado = estadoServico(s);
+          const podeComecar =
+            user.tipo !== 'admin' && estado === 'disponivel' && (!s.funcionarioId || s.funcionarioId === user.id);
+          const comecarBtn = podeComecar
+            ? `<button class="btn btn--metal" data-comecar="${s.id}" style="padding:6px 12px; font-size:13px">Começar</button>`
+            : '';
+          const aguardandoInicioMeta =
+            user.tipo !== 'admin' && estado === 'disponivel' && s.funcionarioId && s.funcionarioId !== user.id
+              ? `<div class="row__meta">Aguardando ${escapeHtml(s.funcionarioNome)} começar</div>`
+              : '';
+          const disponivelBadge = estado === 'disponivel' ? '<span class="badge badge--idle">Disponível</span>' : '';
+          const emAndamentoBadge =
+            estado === 'em_andamento' && !s.concluidoInformadoEm ? '<span class="badge badge--brand">Em andamento</span>' : '';
+
           const podeConcluirDireto = user.tipo === 'admin' && !s.dataFinal && !s.concluidoInformadoEm;
           const concluirDiretoBtn = podeConcluirDireto
             ? `<button class="btn btn--metal" data-concluir="${s.id}" style="padding:6px 12px; font-size:13px">Concluir</button>`
@@ -138,7 +165,9 @@ async function atualizarListaServicos(view) {
           <div class="row" style="padding:14px 18px">
             <div class="row__main">
               <div class="row__title">${escapeHtml(s.nome)}</div>
-              <div class="row__meta">${escapeHtml(s.tipo)}${acaoLabel} · ${escapeHtml(s.funcionarioNome || '—')} · ${Const.formatarData(s.criadoEm)}</div>
+              <div class="row__meta">${escapeHtml(s.tipo)}${acaoLabel} · ${escapeHtml(s.funcionarioNome || 'Disponível')} · ${Const.formatarData(s.criadoEm)}</div>
+              ${aguardandoInicioMeta}
+              ${s.iniciadoEm ? `<div class="row__meta">Início: ${Const.formatarData(s.iniciadoEm)}</div>` : ''}
               ${
                 s.percentualAproveitamento != null
                   ? `<div class="row__meta">Aproveitamento: ${s.percentualAproveitamento}% · Desperdício: ${(100 - s.percentualAproveitamento).toFixed(1)}%</div>`
@@ -148,8 +177,11 @@ async function atualizarListaServicos(view) {
             </div>
             <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end">
               ${statusBadge}
+              ${disponivelBadge}
+              ${emAndamentoBadge}
               ${concluidoBadge}
               ${aguardandoBadge}
+              ${comecarBtn}
               ${marcarBtn}
               ${concluirDiretoBtn}
               ${validarBtn}
@@ -162,6 +194,20 @@ async function atualizarListaServicos(view) {
         .join('')}
     </div>
   `;
+
+  listaEl.querySelectorAll('[data-comecar]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const registro = await DB.get('servicos', btn.dataset.comecar);
+      if (!registro) return;
+      const user = Auth.current;
+      registro.funcionarioId = user.id;
+      registro.funcionarioNome = user.nome;
+      registro.iniciadoEm = Date.now();
+      await DB.put('servicos', registro);
+      if (registro.tipo === 'CNP') await sincronizarPlanoCorteComCNP(registro);
+      atualizarListaServicos(view);
+    });
+  });
 
   listaEl.querySelectorAll('[data-marcar-concluido]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -237,6 +283,9 @@ function criarEstadoFormularioVazio() {
     catalogoNome: '',
     catalogoMatches: [],
     catalogoSelecionado: null, // item existente escolhido pra atualizar
+    funcionarioId: null, // atribuição feita pelo Admin (opcional)
+    dataInicioAdmin: '',
+    dataFinalAdmin: '',
     erro: '',
   };
 }
@@ -260,11 +309,15 @@ function criarEstadoFormularioEdicao(registro) {
     catalogoNome: registro.nome || '',
     catalogoMatches: [],
     catalogoSelecionado: null,
+    funcionarioId: registro.funcionarioId || null,
+    dataInicioAdmin: dataParaInputDate(registro.iniciadoEm),
+    dataFinalAdmin: dataParaInputDate(registro.dataFinal),
     erro: '',
   };
 }
 
 let categoriasCache = [];
+let funcionariosCache = [];
 
 async function renderServicoForm(view) {
   const st = ServicosView.formState;
@@ -272,6 +325,10 @@ async function renderServicoForm(view) {
   categoriasCache = await Categorias.listar();
   const ehCadastro = !editando && !!Categorias.categoriaCadastroDe(categoriasCache, st.tipo);
   const ehCorteComAproveitamento = Categorias.temPorcentagem(categoriasCache, st.tipo);
+  const ehAdmin = Auth.isAdmin();
+  if (ehAdmin) {
+    funcionariosCache = (await DB.getAll('usuarios')).filter((u) => u.tipo !== 'admin');
+  }
 
   view.innerHTML = `
     <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px">
@@ -299,6 +356,33 @@ async function renderServicoForm(view) {
       </div>
 
       <div id="bloco-nome"></div>
+
+      ${
+        ehAdmin
+          ? `<div class="field">
+              <label for="f-func-resp">Funcionário responsável ${editando ? '' : '(opcional — deixe em branco para ficar disponível para qualquer um)'}</label>
+              <select id="f-func-resp">
+                <option value="">Disponível para qualquer um</option>
+                ${funcionariosCache.map((u) => `<option value="${u.id}" ${u.id === st.funcionarioId ? 'selected' : ''}>${escapeHtml(u.nome)}</option>`).join('')}
+              </select>
+            </div>`
+          : ''
+      }
+
+      ${
+        ehAdmin && editando
+          ? `<div style="display:flex; gap:12px">
+              <div class="field" style="flex:1">
+                <label for="f-data-inicio-adm">Data Início</label>
+                <input id="f-data-inicio-adm" type="date" value="${escapeHtml(st.dataInicioAdmin || '')}" />
+              </div>
+              <div class="field" style="flex:1">
+                <label for="f-data-fim-adm">Data Final</label>
+                <input id="f-data-fim-adm" type="date" value="${escapeHtml(st.dataFinalAdmin || '')}" />
+              </div>
+            </div>`
+          : ''
+      }
 
       ${
         ehCorteComAproveitamento
@@ -341,6 +425,17 @@ async function renderServicoForm(view) {
   document.getElementById('f-pedido').addEventListener('input', (ev) => (st.numeroPedido = ev.target.value));
   document.getElementById('f-data-prog').addEventListener('input', (ev) => (st.dataProgramada = ev.target.value));
   document.getElementById('f-obs').addEventListener('input', (ev) => (st.observacoes = ev.target.value));
+
+  if (ehAdmin) {
+    const funcSelect = document.getElementById('f-func-resp');
+    if (funcSelect) funcSelect.addEventListener('change', (ev) => (st.funcionarioId = ev.target.value || null));
+    if (editando) {
+      const inicioEl = document.getElementById('f-data-inicio-adm');
+      const fimEl = document.getElementById('f-data-fim-adm');
+      if (inicioEl) inicioEl.addEventListener('input', (ev) => (st.dataInicioAdmin = ev.target.value));
+      if (fimEl) fimEl.addEventListener('input', (ev) => (st.dataFinalAdmin = ev.target.value));
+    }
+  }
 
   if (ehCorteComAproveitamento) {
     const el = document.getElementById('f-percentual');
@@ -555,6 +650,32 @@ async function salvarServico(view) {
     registro.dataProgramada = st.dataProgramada ? Const.inputDateParaTimestamp(st.dataProgramada) : null;
     registro.observacoes = st.observacoes || '';
     if (ehCorte) registro.percentualAproveitamento = percentual;
+
+    if (user.tipo === 'admin') {
+      // reatribuição de funcionário responsável
+      if (st.funcionarioId) {
+        const func = funcionariosCache.find((u) => u.id === st.funcionarioId);
+        registro.funcionarioId = st.funcionarioId;
+        registro.funcionarioNome = func ? func.nome : registro.funcionarioNome;
+      } else {
+        registro.funcionarioId = null;
+        registro.funcionarioNome = null;
+        registro.iniciadoEm = null; // sem funcionário, volta a ficar "Disponível"
+      }
+
+      // Admin pode ajustar Data Início e Data Final diretamente
+      registro.iniciadoEm = st.dataInicioAdmin ? Const.inputDateParaTimestamp(st.dataInicioAdmin) : null;
+      const novaDataFinal = st.dataFinalAdmin ? Const.inputDateParaTimestamp(st.dataFinalAdmin) : null;
+      registro.dataFinal = novaDataFinal;
+      if (novaDataFinal) {
+        registro.concluidoInformadoEm = registro.concluidoInformadoEm || novaDataFinal;
+        registro.validadoPeloAdmin = true;
+      } else {
+        registro.concluidoInformadoEm = null;
+        registro.validadoPeloAdmin = false;
+      }
+    }
+
     // qualquer edição volta a exigir aprovação, a não ser que quem edite seja o Admin
     registro.aprovado = user.tipo === 'admin' ? 'aprovado' : 'pendente';
     registro.dataAprovacao = user.tipo === 'admin' ? Date.now() : null;
@@ -564,6 +685,23 @@ async function salvarServico(view) {
     if (registro.tipo === 'CNP') await sincronizarPlanoCorteComCNP(registro);
     voltarParaLista();
     return;
+  }
+
+  let funcionarioIdFinal = user.id;
+  let funcionarioNomeFinal = user.nome;
+  let iniciadoEmFinal = Date.now(); // funcionário lançando o próprio serviço já está "fazendo"
+
+  if (user.tipo === 'admin') {
+    if (st.funcionarioId) {
+      const func = funcionariosCache.find((u) => u.id === st.funcionarioId);
+      funcionarioIdFinal = st.funcionarioId;
+      funcionarioNomeFinal = func ? func.nome : null;
+      iniciadoEmFinal = null; // atribuído, mas só conta quando a pessoa clicar em "Começar"
+    } else {
+      funcionarioIdFinal = null;
+      funcionarioNomeFinal = null;
+      iniciadoEmFinal = null; // fica "Disponível" pra qualquer um
+    }
   }
 
   const registro = {
@@ -577,8 +715,9 @@ async function salvarServico(view) {
     percentualAproveitamento: percentual,
     catalogoItemId,
     acao,
-    funcionarioId: user.id,
-    funcionarioNome: user.nome,
+    funcionarioId: funcionarioIdFinal,
+    funcionarioNome: funcionarioNomeFinal,
+    iniciadoEm: iniciadoEmFinal,
     aprovado: user.tipo === 'admin' ? 'aprovado' : 'pendente',
     dataAprovacao: user.tipo === 'admin' ? Date.now() : null,
     criadoEm: Date.now(),

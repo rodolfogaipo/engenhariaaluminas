@@ -6,7 +6,7 @@
    vez de continuar usando a cópia antiga guardada no celular.
    ========================================================= */
 
-const CACHE_VERSION = 'v18';
+const CACHE_VERSION = 'v20';
 const CACHE_NAME = `controle-equipe-${CACHE_VERSION}`;
 
 const CORE_ASSETS = [
@@ -58,20 +58,39 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
 
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      const network = fetch(request)
-        .then((response) => {
+  const url = new URL(request.url);
+  const ehArquivoDeDados = url.pathname.includes('/data/');
+
+  if (ehArquivoDeDados) {
+    // arquivo de dados da planilha: quase não muda, cache-first é o certo
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        const network = fetch(request).then((response) => {
           if (response && response.status === 200) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
           }
           return response;
-        })
-        .catch(() => cached || caches.match('./index.html'));
+        });
+        return cached || network;
+      })
+    );
+    return;
+  }
 
-      // cache-first para carregar rápido; atualiza em segundo plano
-      return cached || network;
-    })
+  // HTML/JS/CSS do app: NETWORK-FIRST. Sempre busca a versão mais nova
+  // quando há internet — assim, depois de uma atualização, o app não
+  // fica preso mostrando uma tela antiga. Só usa o cache quando está
+  // offline de verdade.
+  event.respondWith(
+    fetch(request)
+      .then((response) => {
+        if (response && response.status === 200) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(request).then((cached) => cached || caches.match('./index.html')))
   );
 });
