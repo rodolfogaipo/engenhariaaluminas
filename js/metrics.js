@@ -1,13 +1,19 @@
 /* =========================================================
    metrics.js — motor de cálculo de desempenho
-   Porta 1:1 a fórmula que já existia nas abas por funcionário
-   da planilha (CONFIGURAÇÕES define os pesos). Roda 100% local,
-   em cima dos serviços concluídos (Data Final) e dos registros
-   de Plano de Corte concluídos (Data Final Corte).
+   Porta 1:1 as fórmulas reais da planilha (conferidas direto nas
+   células, não de memória):
 
-   OBS: a exclusão de semanas de férias do cálculo de Meta entra
-   quando o módulo de Férias for construído (próximo passo). Por
-   enquanto todas as semanas contam normalmente.
+   - As semanas são contadas em blocos fixos de 7 dias a partir de
+     uma ÂNCORA (domingo 28/12/2025 na planilha original) — não da
+     semana ISO (segunda a domingo) nem relativas a "hoje".
+   - Prazo/Atraso só contam itens que TÊM Data Programada. Itens
+     sem Data Programada contam em Projetos, mas não em Prazo nem
+     em Atraso (igual às fórmulas SUMPRODUCT da planilha).
+   - Meta = MAX(Meta_Mínima, MÉDIA de Projetos de TODAS as semanas
+     anteriores × (1 + Crescimento_Mín)). É uma média que cresce
+     desde o início, não uma janela de 4 semanas.
+   - Única regra que a planilha não tinha: semanas de férias somem
+     do cálculo da média de Meta (e não recebem Nota).
    ========================================================= */
 
 const Metrics = {
@@ -26,26 +32,48 @@ const Metrics = {
     );
   },
 
+  async ancoraSemanas() {
+    const cfg = await DB.get('config', 'semana_ancora');
+    if (cfg && cfg.data) return cfg.data;
+    // Igual à planilha original: primeira semana começa no domingo 28/12/2025
+    return new Date(2025, 11, 28).getTime();
+  },
+
+  async indiceSemana(ts) {
+    const ancora = await this.ancoraSemanas();
+    return Math.floor((ts - ancora) / (7 * 24 * 60 * 60 * 1000));
+  },
+
+  async rangeDaSemanaPorIndice(indice) {
+    const ancora = await this.ancoraSemanas();
+    const inicio = ancora + indice * 7 * 24 * 60 * 60 * 1000;
+    const fim = inicio + 7 * 24 * 60 * 60 * 1000;
+    return { inicio, fim };
+  },
+
   segundaFeira(ts) {
+    // mantido só pra uso pontual de exibição; o cálculo em si usa
+    // indiceSemana/rangeDaSemanaPorIndice, ancorado na planilha
     const d = new Date(ts);
-    const dia = d.getDay(); // 0=domingo
+    const dia = d.getDay();
     const diff = (dia === 0 ? -6 : 1) - dia;
     d.setDate(d.getDate() + diff);
     d.setHours(0, 0, 0, 0);
     return d.getTime();
   },
 
-  rangeDaSemana(referenciaTs, semanasAtras) {
-    const segunda = this.segundaFeira(referenciaTs);
-    const inicio = new Date(segunda);
-    inicio.setDate(inicio.getDate() - 7 * semanasAtras);
-    const fim = new Date(inicio);
-    fim.setDate(fim.getDate() + 7);
-    return { inicio: inicio.getTime(), fim: fim.getTime() };
+  async feriasDoFuncionario(funcionarioId) {
+    const todas = await DB.getAll('ferias');
+    return todas.filter((f) => f.funcionarioId === funcionarioId);
+  },
+
+  semanaEmFerias(feriasDoFunc, inicio, fim) {
+    return feriasDoFunc.some((f) => f.dataInicio < fim && f.dataFim >= inicio);
   },
 
   /* eventos de conclusão do funcionário: serviços com Data Final +
-     itens de Plano de Corte com Data Final Corte */
+     itens de Plano de Corte com Data Final Corte. Guarda também se
+     tinha Data Programada, porque isso muda a regra de Prazo/Atraso. */
   async eventosConcluidosDoFuncionario(funcionarioId) {
     const [servicos, planoCorte] = await Promise.all([
       DB.getAll('servicos'),
@@ -58,6 +86,7 @@ const Metrics = {
       if (s.funcionarioId === funcionarioId && s.dataFinal) {
         eventos.push({
           dataFinal: s.dataFinal,
+          temPrazo: s.dataProgramada != null,
           dataProgramada: s.dataProgramada || null,
           erros: s.erros || 0,
           errosNovos: s.errosNovos || 0,
@@ -69,6 +98,7 @@ const Metrics = {
       if (p.funcionarioCorteId === funcionarioId && p.dataFinalCorte) {
         eventos.push({
           dataFinal: p.dataFinalCorte,
+          temPrazo: p.dataProgramada != null,
           dataProgramada: p.dataProgramada || null,
           erros: 0,
           errosNovos: 0,
@@ -79,23 +109,16 @@ const Metrics = {
     return eventos;
   },
 
-  async feriasDoFuncionario(funcionarioId) {
-    const todas = await DB.getAll('ferias');
-    return todas.filter((f) => f.funcionarioId === funcionarioId);
-  },
-
-  semanaEmFerias(feriasDoFunc, inicio, fim) {
-    return feriasDoFunc.some((f) => f.dataInicio < fim && f.dataFim >= inicio);
-  },
-
-  calcularSemana(eventos, referenciaTs, semanasAtras, pesos, feriasDoFunc = []) {
-    const { inicio, fim } = this.rangeDaSemana(referenciaTs, semanasAtras);
+  async calcularSemanaPorIndice(eventos, indice, pesos, feriasDoFunc = []) {
+    const { inicio, fim } = await this.rangeDaSemanaPorIndice(indice);
     const emFerias = this.semanaEmFerias(feriasDoFunc, inicio, fim);
     const daSemana = eventos.filter((e) => e.dataFinal >= inicio && e.dataFinal < fim);
 
     const projetos = daSemana.length;
-    const prazo = daSemana.filter((e) => !e.dataProgramada || e.dataFinal <= e.dataProgramada).length;
-    const atraso = projetos - prazo;
+    // Prazo/Atraso só contam quem tem Data Programada preenchida —
+    // igual às fórmulas SUMPRODUCT da planilha.
+    const prazo = daSemana.filter((e) => e.temPrazo && e.dataFinal <= e.dataProgramada).length;
+    const atraso = daSemana.filter((e) => e.temPrazo && e.dataFinal > e.dataProgramada).length;
     const erros = daSemana.reduce((s, e) => s + (e.erros || 0), 0);
     const errosNovos = daSemana.reduce((s, e) => s + (e.errosNovos || 0), 0);
     const pctPrazo = projetos > 0 ? prazo / projetos : 0;
@@ -108,28 +131,36 @@ const Metrics = {
       errosNovos * pesos.peso_erro_novo;
     nota = Math.max(0, Math.min(100, nota));
 
-    return { inicio, fim, projetos, prazo, atraso, erros, errosNovos, pctPrazo, nota, emFerias };
+    return { indice, inicio, fim, projetos, prazo, atraso, erros, errosNovos, pctPrazo, nota, emFerias };
   },
 
-  async calcularMeta(eventos, referenciaTs, semanasAtras, pesos, feriasDoFunc = []) {
+  /* Meta da semana `indice` = média de Projetos de TODAS as semanas
+     anteriores (0 até indice-1), pulando semanas de férias, vezes
+     (1+crescimento) — igual à planilha (que usa AVERAGE(C2:C[n-1])),
+     só que a planilha não tinha a regra de pular férias. */
+  async calcularMetaPorIndice(eventos, indice, pesos, feriasDoFunc = []) {
+    if (indice <= 0) return pesos.meta_minima;
+
     let soma = 0;
     let contadas = 0;
-    for (let i = 1; i <= 4; i++) {
-      const s = this.calcularSemana(eventos, referenciaTs, semanasAtras + i, pesos, feriasDoFunc);
-      if (s.emFerias) continue; // semana de férias não conta pra média
+    for (let i = 0; i < indice; i++) {
+      const s = await this.calcularSemanaPorIndice(eventos, i, pesos, feriasDoFunc);
+      if (s.emFerias) continue;
       soma += s.projetos;
       contadas++;
     }
-    const media = contadas > 0 ? soma / contadas : 0;
+    if (contadas === 0) return pesos.meta_minima;
+    const media = soma / contadas;
     return Math.max(pesos.meta_minima, media * (1 + pesos.crescimento_min));
   },
 
   async calcularPctMeta(semana, meta, pesos) {
     if (!meta || meta <= 0) return 0;
-    return (
+    return Math.max(
+      0,
       semana.projetos / meta +
-      (semana.pctPrazo - 1) * pesos.peso_prazo -
-      (semana.atraso * pesos.peso_atraso + semana.erros * pesos.peso_erro + semana.errosNovos * pesos.peso_erro_novo) / meta
+        (semana.pctPrazo - 1) * pesos.peso_prazo -
+        (semana.atraso * pesos.peso_atraso + semana.erros * pesos.peso_erro + semana.errosNovos * pesos.peso_erro_novo) / meta
     );
   },
 
@@ -139,17 +170,19 @@ const Metrics = {
     return { icone: '➡️', label: 'Estável' };
   },
 
-  /* Resumo completo de N semanas (mais recente por último), pra
-     alimentar o Dashboard e o gráfico */
+  /* Resumo de N semanas terminando na semana que contém referenciaTs
+     (mais recente por último), pra alimentar o Dashboard e o gráfico. */
   async resumoSemanal(funcionarioId, numSemanas = 6, referenciaTs = Date.now()) {
     const pesos = await this.pesos();
     const eventos = await this.eventosConcluidosDoFuncionario(funcionarioId);
     const feriasDoFunc = await this.feriasDoFuncionario(funcionarioId);
+    const indiceAtual = await this.indiceSemana(referenciaTs);
 
     const semanas = [];
     for (let i = numSemanas - 1; i >= 0; i--) {
-      const semana = this.calcularSemana(eventos, referenciaTs, i, pesos, feriasDoFunc);
-      const meta = await this.calcularMeta(eventos, referenciaTs, i, pesos, feriasDoFunc);
+      const indice = indiceAtual - i;
+      const semana = await this.calcularSemanaPorIndice(eventos, indice, pesos, feriasDoFunc);
+      const meta = await this.calcularMetaPorIndice(eventos, indice, pesos, feriasDoFunc);
       const pctMeta = semana.emFerias ? null : await this.calcularPctMeta(semana, meta, pesos);
       semanas.push({ ...semana, meta, pctMeta });
     }
@@ -161,9 +194,8 @@ const Metrics = {
     return { semanas, atual, tendencia: tend };
   },
 
-  /* números de mês/ano — soma de projetos concluídos no PERÍODO
-     CORRENTE (mês civil, do dia 1 até hoje / ano civil, de 1º de
-     janeiro até hoje), não uma janela de "últimos 30/365 dias" */
+  /* números de mês/ano — período CIVIL (do dia 1 do mês / 1º de
+     janeiro até hoje), não janela corrida de N dias */
   async totalMesCalendario(funcionarioId, referenciaTs = Date.now()) {
     const eventos = await this.eventosConcluidosDoFuncionario(funcionarioId);
     const agora = new Date(referenciaTs);

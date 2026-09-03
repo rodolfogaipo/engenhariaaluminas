@@ -69,7 +69,7 @@ async function renderDashboardEquipe(cont) {
     <div id="dash-equipe-conteudo"><div class="wip">${ICONS.wip}<b>Calculando…</b></div></div>
   `;
 
-  document.getElementById('rotulo-periodo').textContent = rotuloPeriodo();
+  document.getElementById('rotulo-periodo').textContent = await rotuloPeriodo();
 
   document.getElementById('btn-periodo-semana').addEventListener('click', () => {
     DashboardAdminView.periodoTipo = 'semana';
@@ -84,7 +84,7 @@ async function renderDashboardEquipe(cont) {
     renderDashboardEquipe(cont);
   });
   const btnProximo = document.getElementById('btn-periodo-proximo');
-  btnProximo.disabled = periodoEhAtualOuFuturo();
+  btnProximo.disabled = await periodoEhAtualOuFuturo();
   btnProximo.addEventListener('click', () => {
     navegarPeriodo(1);
     renderDashboardEquipe(cont);
@@ -93,16 +93,17 @@ async function renderDashboardEquipe(cont) {
   await renderDashboardEquipeConteudo(document.getElementById('dash-equipe-conteudo'));
 }
 
-function rotuloPeriodo() {
+async function rotuloPeriodo() {
   const d = new Date(DashboardAdminView.dataReferencia);
   if (DashboardAdminView.periodoTipo === 'mes') {
     return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   }
-  const inicio = new Date(Metrics.segundaFeira(DashboardAdminView.dataReferencia));
-  const fim = new Date(inicio);
-  fim.setDate(fim.getDate() + 6);
+  const indice = await Metrics.indiceSemana(DashboardAdminView.dataReferencia);
+  const { inicio, fim } = await Metrics.rangeDaSemanaPorIndice(indice);
+  const inicioD = new Date(inicio);
+  const fimD = new Date(fim - 1);
   const pad = (n) => String(n).padStart(2, '0');
-  return `${pad(inicio.getDate())}/${pad(inicio.getMonth() + 1)} a ${pad(fim.getDate())}/${pad(fim.getMonth() + 1)}`;
+  return `${pad(inicioD.getDate())}/${pad(inicioD.getMonth() + 1)} a ${pad(fimD.getDate())}/${pad(fimD.getMonth() + 1)}`;
 }
 
 function navegarPeriodo(direcao) {
@@ -116,14 +117,16 @@ function navegarPeriodo(direcao) {
   DashboardAdminView.dataReferencia = d.getTime();
 }
 
-function periodoEhAtualOuFuturo() {
+async function periodoEhAtualOuFuturo() {
   const agora = Date.now();
   if (DashboardAdminView.periodoTipo === 'mes') {
     const d = new Date(DashboardAdminView.dataReferencia);
     const hoje = new Date();
     return d.getFullYear() === hoje.getFullYear() && d.getMonth() === hoje.getMonth();
   }
-  return Metrics.segundaFeira(DashboardAdminView.dataReferencia) === Metrics.segundaFeira(agora);
+  const indiceRef = await Metrics.indiceSemana(DashboardAdminView.dataReferencia);
+  const indiceAgora = await Metrics.indiceSemana(agora);
+  return indiceRef === indiceAgora;
 }
 
 async function renderDashboardEquipeConteudo(cont) {
