@@ -63,6 +63,17 @@ const DB = {
     return tx(storeName, 'readwrite', (store) => store.put(record));
   },
 
+  async putMany(storeName, records) {
+    const db = await getDb();
+    return new Promise((resolve, reject) => {
+      const t = db.transaction(storeName, 'readwrite');
+      const store = t.objectStore(storeName);
+      records.forEach((r) => store.put(r));
+      t.oncomplete = () => resolve(records.length);
+      t.onerror = () => reject(t.error);
+    });
+  },
+
   async get(storeName, key) {
     const db = await getDb();
     return new Promise((resolve, reject) => {

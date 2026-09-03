@@ -40,20 +40,50 @@ async function renderAdmin(view) {
   if (AdminView.aba === 'usuarios') {
     await renderAdminUsuarios(cont, view);
   } else {
-    renderAdminMais(cont);
+    await renderAdminMais(cont);
   }
 }
 
-function renderAdminMais(cont) {
+async function renderAdminMais(cont) {
+  const jaImportado = await SeedImport.jaImportado();
+  const flag = jaImportado ? await DB.get('config', 'planilha_importada_em') : null;
+
   cont.innerHTML = `
     <div class="card">
+      <h3 class="section-title" style="font-size:16px">Importar dados da planilha</h3>
+      <p class="section-sub">Traz os serviços e o Plano de Corte reais do CONTROLE_EQUIPE.xlsx pro app, pra você testar tudo junto com dados de verdade.</p>
+      ${
+        jaImportado
+          ? `<div class="row__meta" style="margin-bottom:14px">Já importado em ${Const.formatarDataHora(flag.valor)} — ${flag.totalServicos} serviços, ${flag.totalPlanoCorte} registros de Plano de Corte.</div>`
+          : ''
+      }
+      <div id="import-status" class="row__meta" style="margin-bottom:10px"></div>
+      <button class="btn ${jaImportado ? 'btn--ghost' : 'btn--primary'}" id="btn-importar-planilha">${jaImportado ? 'Importar de novo (duplica os dados)' : 'Importar dados da planilha'}</button>
+    </div>
+
+    <div class="card" style="margin-top:16px">
       <div class="wip">
         ${ICONS.wip}
         <b>Mais ferramentas a caminho</b>
-        <div class="empty__sub">Comparativo de equipe com gráficos, alertas automáticos, férias, quadro de avisos, anotações privadas, diário, treinamento e exportação de dados chegam nos próximos passos — um de cada vez, como combinamos.</div>
+        <div class="empty__sub">Comparativo de equipe com gráficos, alertas automáticos, quadro de avisos e treinamento continuam chegando nos próximos passos.</div>
       </div>
     </div>
   `;
+
+  document.getElementById('btn-importar-planilha').addEventListener('click', async () => {
+    if (jaImportado && !confirm('Isso vai duplicar os dados já importados. Continuar mesmo assim?')) return;
+    const btn = document.getElementById('btn-importar-planilha');
+    const statusEl = document.getElementById('import-status');
+    btn.disabled = true;
+    try {
+      const resultado = await SeedImport.importar((msg) => (statusEl.textContent = msg));
+      statusEl.textContent = `Pronto! ${resultado.totalServicos} serviços e ${resultado.totalPlanoCorte} registros de Plano de Corte importados.`;
+      setTimeout(() => renderAdmin(document.getElementById('view')), 1200);
+    } catch (e) {
+      statusEl.textContent = 'Erro ao importar: ' + e.message;
+      btn.disabled = false;
+    }
+  });
 }
 
 /* ---------------- USUÁRIOS ---------------- */

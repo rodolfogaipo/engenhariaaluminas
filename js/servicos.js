@@ -16,6 +16,9 @@ async function renderServicos(view) {
   if (ServicosView.subView === 'form') {
     return renderServicoForm(view);
   }
+  if (ServicosView.subView === 'concluir') {
+    return renderConcluirServico(view);
+  }
   return renderServicosLista(view);
 }
 
@@ -99,6 +102,29 @@ async function renderServicosLista(view) {
             user.tipo === 'admin'
               ? `<button class="btn btn--danger" data-excluir="${s.id}" style="padding:6px 12px; font-size:13px">Excluir</button>`
               : '';
+          const podeMarcarConcluido =
+            user.tipo !== 'admin' && !s.dataFinal && !s.concluidoInformadoEm && s.funcionarioId === user.id;
+          const marcarBtn = podeMarcarConcluido
+            ? `<button class="btn btn--metal" data-marcar-concluido="${s.id}" style="padding:6px 12px; font-size:13px">Marcar como concluído</button>`
+            : '';
+
+          const podeConcluirDireto = user.tipo === 'admin' && !s.dataFinal && !s.concluidoInformadoEm;
+          const concluirDiretoBtn = podeConcluirDireto
+            ? `<button class="btn btn--metal" data-concluir="${s.id}" style="padding:6px 12px; font-size:13px">Concluir</button>`
+            : '';
+
+          const podeValidar = user.tipo === 'admin' && !s.dataFinal && s.concluidoInformadoEm;
+          const validarBtn = podeValidar
+            ? `<button class="btn btn--primary" data-concluir="${s.id}" style="padding:6px 12px; font-size:13px">Validar conclusão</button>`
+            : '';
+
+          const aguardandoBadge =
+            !s.dataFinal && s.concluidoInformadoEm
+              ? '<span class="badge badge--warn">Aguardando validação do Admin</span>'
+              : '';
+          const concluidoBadge = s.dataFinal
+            ? `<span class="badge badge--brand">Concluído ${Const.formatarData(s.dataFinal)}</span>`
+            : '';
           return `
           <div class="row" style="padding:14px 18px">
             <div class="row__main">
@@ -109,9 +135,15 @@ async function renderServicosLista(view) {
                   ? `<div class="row__meta">Aproveitamento: ${s.percentualAproveitamento}% · Desperdício: ${(100 - s.percentualAproveitamento).toFixed(1)}%</div>`
                   : ''
               }
+              ${s.dataFinal ? `<div class="row__meta">Erros: ${s.erros || 0} · Erros novos: ${s.errosNovos || 0}</div>` : ''}
             </div>
             <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end">
               ${statusBadge}
+              ${concluidoBadge}
+              ${aguardandoBadge}
+              ${marcarBtn}
+              ${concluirDiretoBtn}
+              ${validarBtn}
               ${aprovBtn}
               ${editBtn}
               ${delBtn}
@@ -121,6 +153,16 @@ async function renderServicosLista(view) {
         .join('')}
     </div>
   `;
+
+  listaEl.querySelectorAll('[data-marcar-concluido]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const registro = await DB.get('servicos', btn.dataset.marcarConcluido);
+      if (!registro) return;
+      registro.concluidoInformadoEm = Date.now();
+      await DB.put('servicos', registro);
+      renderServicosLista(view);
+    });
+  });
 
   listaEl.querySelectorAll('[data-aprovar]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -132,6 +174,16 @@ async function renderServicosLista(view) {
       await DB.put('servicos', registro);
       if (registro.tipo === 'CNP') await sincronizarPlanoCorteComCNP(registro);
       renderServicosLista(view);
+    });
+  });
+
+  listaEl.querySelectorAll('[data-concluir]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const registro = await DB.get('servicos', btn.dataset.concluir);
+      if (!registro) return;
+      ServicosView.subView = 'concluir';
+      ServicosView.formState = { id: registro.id, nome: registro.nome, erros: '0', errosNovos: '0', erro: '' };
+      renderView('servicos');
     });
   });
 
@@ -570,5 +622,76 @@ async function excluirPlanoCorteLigado(cnpServicoId) {
   const todos = await DB.getAll('plano_corte');
   const pc = todos.find((p) => p.cnpServicoId === cnpServicoId);
   if (pc) await DB.delete('plano_corte', pc.id);
+}
+
+/* ---------------- CONCLUIR SERVIÇO ----------------
+   Marca a Data Final do serviço e registra Erros / Erros Novos —
+   são esses dois números, junto com o prazo, que alimentam o
+   cálculo de Nota e %Meta no Dashboard. */
+
+async function renderConcluirServico(view) {
+  const st = ServicosView.formState;
+  const registro = await DB.get('servicos', st.id);
+  const validando = !!(registro && registro.concluidoInformadoEm);
+
+  view.innerHTML = `
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px">
+      <button class="topbar__icon-btn" id="btn-voltar-concluir" aria-label="Voltar" style="background:var(--paper-dim)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h2 class="section-title" style="margin:0">${validando ? 'Validar Conclusão' : 'Concluir Serviço'}</h2>
+    </div>
+
+    <div class="card">
+      <p class="section-sub" style="margin-top:0">${escapeHtml(st.nome)}</p>
+      ${
+        validando
+          ? `<div class="row__meta" style="margin-bottom:14px">Marcado como concluído pelo funcionário em ${Const.formatarDataHora(registro.concluidoInformadoEm)}. Confirme os erros para validar.</div>`
+          : ''
+      }
+
+      ${st.erro ? `<div class="auth__error show" style="text-align:left; margin-bottom:14px">${escapeHtml(st.erro)}</div>` : ''}
+
+      <div class="field">
+        <label for="f-erros">Erros</label>
+        <input id="f-erros" type="number" min="0" step="1" value="${escapeHtml(st.erros)}" />
+      </div>
+      <div class="field">
+        <label for="f-erros-novos">Erros Novos</label>
+        <input id="f-erros-novos" type="number" min="0" step="1" value="${escapeHtml(st.errosNovos)}" />
+      </div>
+
+      <div class="row__meta" style="margin-bottom:14px">Só o Admin registra Erros e Erros Novos.</div>
+
+      <div style="display:flex; gap:10px">
+        <button class="btn btn--ghost" id="btn-cancelar-concluir" style="flex:1">Cancelar</button>
+        <button class="btn btn--primary" id="btn-confirmar-concluir" style="flex:2">${validando ? 'Validar' : 'Confirmar conclusão'}</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('btn-voltar-concluir').addEventListener('click', voltarParaLista);
+  document.getElementById('btn-cancelar-concluir').addEventListener('click', voltarParaLista);
+  document.getElementById('f-erros').addEventListener('input', (ev) => (st.erros = ev.target.value));
+  document.getElementById('f-erros-novos').addEventListener('input', (ev) => (st.errosNovos = ev.target.value));
+
+  document.getElementById('btn-confirmar-concluir').addEventListener('click', async () => {
+    const erros = parseInt(st.erros, 10);
+    const errosNovos = parseInt(st.errosNovos, 10);
+    if (isNaN(erros) || erros < 0 || isNaN(errosNovos) || errosNovos < 0) {
+      st.erro = 'Erros e Erros Novos devem ser números 0 ou maiores.';
+      return renderConcluirServico(view);
+    }
+    const reg = await DB.get('servicos', st.id);
+    if (!reg) return voltarParaLista();
+    reg.dataFinal = reg.concluidoInformadoEm || Date.now();
+    if (!reg.concluidoInformadoEm) reg.concluidoInformadoEm = reg.dataFinal;
+    reg.erros = erros;
+    reg.errosNovos = errosNovos;
+    reg.validadoPeloAdmin = true;
+    reg.validadoEm = Date.now();
+    await DB.put('servicos', reg);
+    voltarParaLista();
+  });
 }
 
