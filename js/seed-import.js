@@ -137,3 +137,117 @@ const SeedImport = {
 };
 
 window.SeedImport = SeedImport;
+
+/* =========================================================
+   Correção pontual: a importação da planilha criou usuários com
+   nome curto (Máyra, Marco Túlio, Leandrinho) porque era assim que
+   apareciam nas abas da planilha. Rodolfo já tinha cadastrado esses
+   funcionários no app com o nome completo. Esta função re-liga todo
+   o histórico importado para as contas reais e apaga as duplicatas.
+   ========================================================= */
+
+const CorrigirFuncionarios = {
+  MAPEAMENTO: [
+    { apelido: 'Máyra', nomeReal: 'Máyra Fernada Amaral de Souza' },
+    { apelido: 'Marco Túlio', nomeReal: 'Marco Túlio Nascimento da Costa' },
+    { apelido: 'Leandrinho', nomeReal: 'Kauan Gustavo de Jesus Silva' },
+  ],
+
+  async precisaCorrigir() {
+    const usuarios = await DB.getAll('usuarios');
+    const nomes = new Set(usuarios.map((u) => u.nome));
+    return this.MAPEAMENTO.some((m) => nomes.has(m.apelido) && nomes.has(m.nomeReal));
+  },
+
+  async executar(onProgresso) {
+    const usuarios = await DB.getAll('usuarios');
+    const porNome = Object.fromEntries(usuarios.map((u) => [u.nome, u]));
+
+    const pares = this.MAPEAMENTO.filter((m) => porNome[m.apelido] && porNome[m.nomeReal]);
+    if (pares.length === 0) {
+      onProgresso?.('Nada para corrigir.');
+      return { corrigidos: 0 };
+    }
+
+    const [servicos, planoCorte, ferias, avisos] = await Promise.all([
+      DB.getAll('servicos'),
+      DB.getAll('plano_corte'),
+      DB.getAll('ferias'),
+      DB.getAll('avisos'),
+    ]);
+
+    const servicosParaAtualizar = [];
+    const corteParaAtualizar = [];
+    const feriasParaAtualizar = [];
+    const avisosParaAtualizar = [];
+
+    for (const par of pares) {
+      onProgresso?.(`Corrigindo ${par.apelido} → ${par.nomeReal}…`);
+      const de = porNome[par.apelido];
+      const para = porNome[par.nomeReal];
+
+      servicos.forEach((s) => {
+        if (s.funcionarioId === de.id) {
+          s.funcionarioId = para.id;
+          s.funcionarioNome = para.nome;
+          servicosParaAtualizar.push(s);
+        }
+      });
+
+      planoCorte.forEach((p) => {
+        let mudou = false;
+        if (p.funcionarioCNPId === de.id) {
+          p.funcionarioCNPId = para.id;
+          p.funcionarioCNPNome = para.nome;
+          mudou = true;
+        }
+        if (p.funcionarioCorteId === de.id) {
+          p.funcionarioCorteId = para.id;
+          p.funcionarioCorteNome = para.nome;
+          mudou = true;
+        }
+        if (mudou) corteParaAtualizar.push(p);
+      });
+
+      ferias.forEach((f) => {
+        if (f.funcionarioId === de.id) {
+          f.funcionarioId = para.id;
+          f.funcionarioNome = para.nome;
+          feriasParaAtualizar.push(f);
+        }
+      });
+
+      avisos.forEach((a) => {
+        if (!a.vistoPor) return;
+        let mudou = false;
+        a.vistoPor.forEach((v) => {
+          if (v.userId === de.id) {
+            v.userId = para.id;
+            v.nome = para.nome;
+            mudou = true;
+          }
+        });
+        if (mudou) avisosParaAtualizar.push(a);
+      });
+    }
+
+    onProgresso?.('Gravando correções…');
+    if (servicosParaAtualizar.length) await DB.putMany('servicos', servicosParaAtualizar);
+    if (corteParaAtualizar.length) await DB.putMany('plano_corte', corteParaAtualizar);
+    if (feriasParaAtualizar.length) await DB.putMany('ferias', feriasParaAtualizar);
+    if (avisosParaAtualizar.length) await DB.putMany('avisos', avisosParaAtualizar);
+
+    for (const par of pares) {
+      await DB.delete('usuarios', porNome[par.apelido].id);
+    }
+
+    onProgresso?.('Concluído!');
+    return {
+      corrigidos: pares.length,
+      servicos: servicosParaAtualizar.length,
+      corte: corteParaAtualizar.length,
+    };
+  },
+};
+
+window.CorrigirFuncionarios = CorrigirFuncionarios;

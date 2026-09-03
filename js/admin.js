@@ -22,6 +22,7 @@ async function renderAdmin(view) {
 
     <div style="display:flex; gap:8px; margin-bottom:18px; overflow-x:auto">
       <button class="btn ${AdminView.aba === 'usuarios' ? 'btn--primary' : 'btn--ghost'}" data-aba="usuarios">Usuários</button>
+      <button class="btn ${AdminView.aba === 'anotacoes' ? 'btn--primary' : 'btn--ghost'}" data-aba="anotacoes">Anotações</button>
       <button class="btn ${AdminView.aba === 'mais' ? 'btn--primary' : 'btn--ghost'}" data-aba="mais">Mais Ferramentas</button>
     </div>
 
@@ -39,6 +40,8 @@ async function renderAdmin(view) {
   const cont = document.getElementById('admin-conteudo');
   if (AdminView.aba === 'usuarios') {
     await renderAdminUsuarios(cont, view);
+  } else if (AdminView.aba === 'anotacoes') {
+    await renderAdminAnotacoes(cont, view);
   } else {
     await renderAdminMais(cont);
   }
@@ -47,9 +50,21 @@ async function renderAdmin(view) {
 async function renderAdminMais(cont) {
   const jaImportado = await SeedImport.jaImportado();
   const flag = jaImportado ? await DB.get('config', 'planilha_importada_em') : null;
+  const precisaCorrigir = await CorrigirFuncionarios.precisaCorrigir();
 
   cont.innerHTML = `
-    <div class="card">
+    ${
+      precisaCorrigir
+        ? `<div class="card" style="border-color:var(--brand-500)">
+            <h3 class="section-title" style="font-size:16px">Corrigir funcionários duplicados</h3>
+            <p class="section-sub">A importação criou usuários com o nome curto da planilha (Máyra, Marco Túlio, Leandrinho). Isso liga todo o histórico importado às contas reais que você já cadastrou, e remove as duplicatas.</p>
+            <div id="corrigir-status" class="row__meta" style="margin-bottom:10px"></div>
+            <button class="btn btn--primary" id="btn-corrigir-funcionarios">Corrigir agora</button>
+          </div>`
+        : ''
+    }
+
+    <div class="card" style="margin-top:16px">
       <h3 class="section-title" style="font-size:16px">Importar dados da planilha</h3>
       <p class="section-sub">Traz os serviços e o Plano de Corte reais do CONTROLE_EQUIPE.xlsx pro app, pra você testar tudo junto com dados de verdade.</p>
       ${
@@ -65,10 +80,26 @@ async function renderAdminMais(cont) {
       <div class="wip">
         ${ICONS.wip}
         <b>Mais ferramentas a caminho</b>
-        <div class="empty__sub">Comparativo de equipe com gráficos, alertas automáticos, quadro de avisos e treinamento continuam chegando nos próximos passos.</div>
+        <div class="empty__sub">Alertas automáticos, quadro de treinamento e exportação de dados continuam chegando nos próximos passos.</div>
       </div>
     </div>
   `;
+
+  if (precisaCorrigir) {
+    document.getElementById('btn-corrigir-funcionarios').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-corrigir-funcionarios');
+      const statusEl = document.getElementById('corrigir-status');
+      btn.disabled = true;
+      try {
+        const resultado = await CorrigirFuncionarios.executar((msg) => (statusEl.textContent = msg));
+        statusEl.textContent = `Pronto! ${resultado.servicos} serviços e ${resultado.corte} registros de corte religados.`;
+        setTimeout(() => renderAdmin(document.getElementById('view')), 1200);
+      } catch (e) {
+        statusEl.textContent = 'Erro ao corrigir: ' + e.message;
+        btn.disabled = false;
+      }
+    });
+  }
 
   document.getElementById('btn-importar-planilha').addEventListener('click', async () => {
     if (jaImportado && !confirm('Isso vai duplicar os dados já importados. Continuar mesmo assim?')) return;
@@ -303,5 +334,160 @@ function fileToResizedDataUrl(file, maxSize) {
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+/* ---------------- ANOTAÇÕES DO ADMIN (privada) ----------------
+   Serve pra ele se programar na rotina — só ele vê e edita. */
+
+const AdminAnotacoesView = {
+  subView: 'lista', // 'lista' | 'form'
+  formState: null,
+};
+
+async function renderAdminAnotacoes(cont, view) {
+  if (AdminAnotacoesView.subView === 'form') {
+    return renderAdminAnotacaoForm(cont, view);
+  }
+
+  const todas = await DB.getAll('anotacoes_admin');
+  const pendentes = todas.filter((a) => !a.feito).sort((a, b) => (b.data || 0) - (a.data || 0));
+  const feitas = todas.filter((a) => a.feito).sort((a, b) => (b.data || 0) - (a.data || 0));
+  const ordenadas = [...pendentes, ...feitas];
+
+  cont.innerHTML = `
+    <div style="display:flex; justify-content:flex-end; margin-bottom:14px">
+      <button class="btn btn--primary" id="btn-nova-anotacao">+ Nova Anotação</button>
+    </div>
+    <div id="lista-anotacoes"></div>
+  `;
+
+  document.getElementById('btn-nova-anotacao').addEventListener('click', () => {
+    AdminAnotacoesView.subView = 'form';
+    AdminAnotacoesView.formState = { editId: null, texto: '', data: dataParaInputDate(Date.now()), feito: false, erro: '' };
+    renderAdminAnotacoes(cont, view);
+  });
+
+  const listaEl = document.getElementById('lista-anotacoes');
+  if (ordenadas.length === 0) {
+    listaEl.innerHTML = `
+      <div class="card">
+        <div class="empty">
+          <div class="empty__title">Nenhuma anotação ainda</div>
+          <div class="empty__sub">Use isso pra organizar sua programação de serviço. Só você vê.</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  listaEl.innerHTML = `
+    <div class="card" style="padding:0">
+      ${ordenadas
+        .map(
+          (a) => `
+        <div class="row" style="padding:14px 18px; align-items:flex-start; flex-wrap:wrap; gap:10px">
+          <div class="row__main" style="flex:1 1 220px">
+            <div class="row__title" style="${a.feito ? 'text-decoration:line-through; color:var(--ink-faint)' : ''}">${escapeHtml(a.texto)}</div>
+            <div class="row__meta">${Const.formatarData(a.data)}</div>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end">
+            <button class="btn btn--ghost" data-toggle="${a.id}" style="padding:6px 12px; font-size:13px">${a.feito ? 'Reabrir' : 'Marcar feito'}</button>
+            <button class="btn btn--ghost" data-editar="${a.id}" style="padding:6px 12px; font-size:13px">Editar</button>
+            <button class="btn btn--danger" data-excluir="${a.id}" style="padding:6px 12px; font-size:13px">Excluir</button>
+          </div>
+        </div>`
+        )
+        .join('')}
+    </div>
+  `;
+
+  listaEl.querySelectorAll('[data-toggle]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const a = await DB.get('anotacoes_admin', btn.dataset.toggle);
+      if (!a) return;
+      a.feito = !a.feito;
+      await DB.put('anotacoes_admin', a);
+      renderAdminAnotacoes(cont, view);
+    });
+  });
+
+  listaEl.querySelectorAll('[data-editar]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const a = await DB.get('anotacoes_admin', btn.dataset.editar);
+      if (!a) return;
+      AdminAnotacoesView.subView = 'form';
+      AdminAnotacoesView.formState = {
+        editId: a.id,
+        texto: a.texto || '',
+        data: dataParaInputDate(a.data) || dataParaInputDate(Date.now()),
+        feito: !!a.feito,
+        erro: '',
+      };
+      renderAdminAnotacoes(cont, view);
+    });
+  });
+
+  listaEl.querySelectorAll('[data-excluir]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Excluir esta anotação?')) return;
+      await DB.delete('anotacoes_admin', btn.dataset.excluir);
+      renderAdminAnotacoes(cont, view);
+    });
+  });
+}
+
+async function renderAdminAnotacaoForm(cont, view) {
+  const st = AdminAnotacoesView.formState;
+  const editando = !!st.editId;
+
+  cont.innerHTML = `
+    <div class="card">
+      <h3 class="section-title" style="font-size:17px">${editando ? 'Editar Anotação' : 'Nova Anotação'}</h3>
+
+      ${st.erro ? `<div class="auth__error show" style="text-align:left; margin-bottom:14px">${escapeHtml(st.erro)}</div>` : ''}
+
+      <div class="field">
+        <label for="f-anot-texto">Texto</label>
+        <textarea id="f-anot-texto" placeholder="Ex: Confirmar prazo do fornecedor de espuma">${escapeHtml(st.texto)}</textarea>
+      </div>
+      <div class="field">
+        <label for="f-anot-data">Data</label>
+        <input id="f-anot-data" type="date" value="${escapeHtml(st.data)}" />
+      </div>
+      <label style="display:flex; align-items:center; gap:8px; margin-bottom:20px; font-size:14px; color:var(--ink-soft)">
+        <input id="f-anot-feito" type="checkbox" style="width:18px; height:18px" ${st.feito ? 'checked' : ''} />
+        Já está feito
+      </label>
+
+      <div style="display:flex; gap:10px">
+        <button class="btn btn--ghost" id="btn-cancelar-anotacao" style="flex:1">Cancelar</button>
+        <button class="btn btn--primary" id="btn-salvar-anotacao" style="flex:2">Salvar</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('btn-cancelar-anotacao').addEventListener('click', () => {
+    AdminAnotacoesView.subView = 'lista';
+    renderAdminAnotacoes(cont, view);
+  });
+  document.getElementById('f-anot-texto').addEventListener('input', (ev) => (st.texto = ev.target.value));
+  document.getElementById('f-anot-data').addEventListener('input', (ev) => (st.data = ev.target.value));
+  document.getElementById('f-anot-feito').addEventListener('change', (ev) => (st.feito = ev.target.checked));
+
+  document.getElementById('btn-salvar-anotacao').addEventListener('click', async () => {
+    const texto = (st.texto || '').trim();
+    if (!texto) {
+      st.erro = 'Digite o texto da anotação.';
+      return renderAdminAnotacaoForm(cont, view);
+    }
+    const registro = st.editId
+      ? await DB.get('anotacoes_admin', st.editId)
+      : { id: dbUtil.uid(), criadoEm: Date.now() };
+    registro.texto = texto;
+    registro.data = st.data ? Const.inputDateParaTimestamp(st.data) : Date.now();
+    registro.feito = !!st.feito;
+    await DB.put('anotacoes_admin', registro);
+    AdminAnotacoesView.subView = 'lista';
+    renderAdminAnotacoes(cont, view);
   });
 }
