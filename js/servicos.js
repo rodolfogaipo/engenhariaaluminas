@@ -200,11 +200,23 @@ async function atualizarListaServicos(view) {
               }
               ${s.dataFinal ? `<div class="row__meta">Erros: ${s.erros || 0} · Erros novos: ${s.errosNovos || 0}</div>` : ''}
               ${
-                s.anexos && s.anexos.length
-                  ? `<div class="row__meta" style="margin-top:4px">${s.anexos
+                s.anexos && s.anexos.filter((a) => a.tipo === 'imagem').length
+                  ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px">${s.anexos
+                      .filter((a) => a.tipo === 'imagem')
                       .map(
                         (a) =>
-                          `<a href="${a.linkBaixar}" target="_blank" rel="noopener" style="color:var(--brand-700); font-weight:600; text-decoration:underline; margin-right:12px">${a.tipo === 'pdf' ? '📄' : a.tipo === 'video' ? '🎬' : '🖼️'} ${escapeHtml(a.nome)}</a>`
+                          `<a href="${a.linkVisualizar}" target="_blank" rel="noopener"><img src="${a.linkImagem}" alt="${escapeHtml(a.nome)}" style="width:56px; height:56px; object-fit:cover; border-radius:6px; border:1px solid var(--line)" /></a>`
+                      )
+                      .join('')}</div>`
+                  : ''
+              }
+              ${
+                s.anexos && s.anexos.filter((a) => a.tipo !== 'imagem').length
+                  ? `<div class="row__meta" style="margin-top:4px">${s.anexos
+                      .filter((a) => a.tipo !== 'imagem')
+                      .map(
+                        (a) =>
+                          `<a href="${a.linkBaixar}" target="_blank" rel="noopener" style="color:var(--brand-700); font-weight:600; text-decoration:underline; margin-right:12px">${a.tipo === 'pdf' ? '📄' : '🎬'} ${escapeHtml(a.nome)}</a>`
                       )
                       .join('')}</div>`
                   : ''
@@ -314,9 +326,12 @@ function renderListaAnexosForm(view) {
     .map(
       (a) => `
       <div class="row" style="padding:8px 0">
-        <div class="row__main">
-          <div class="row__title" style="font-size:13.5px">${a.tipo === 'pdf' ? '📄' : '🖼️'} ${escapeHtml(a.nome)}</div>
-          <div class="row__meta">${formatarTamanhoArquivo(a.tamanho)}</div>
+        <div class="row__main" style="display:flex; align-items:center; gap:10px">
+          ${a.tipo === 'imagem' ? `<img src="${a.linkImagem}" alt="" style="width:36px; height:36px; object-fit:cover; border-radius:6px; flex:0 0 auto" />` : ''}
+          <div>
+            <div class="row__title" style="font-size:13.5px">${a.tipo === 'pdf' ? '📄' : a.tipo === 'video' ? '🎬' : '🖼️'} ${escapeHtml(a.nome)}</div>
+            <div class="row__meta">${formatarTamanhoArquivo(a.tamanho)}</div>
+          </div>
         </div>
         <button class="btn btn--danger" data-remover-anexo="${a.id}" style="padding:5px 10px; font-size:12px">Remover</button>
       </div>`
@@ -356,6 +371,7 @@ async function arquivoParaAnexo(file) {
     tipo: anexo.tipo,
     linkBaixar: anexo.linkBaixar,
     linkVisualizar: anexo.linkVisualizar,
+    linkImagem: anexo.linkImagem,
     tamanho: anexo.tamanho,
     criadoEm: anexo.criadoEm,
   };

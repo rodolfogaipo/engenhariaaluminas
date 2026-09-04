@@ -353,26 +353,30 @@ async function renderDashboardEquipeConteudo(cont) {
 
       const d = new Date(dataRef);
       if (modoAno) {
+        const inicio = new Date(d.getFullYear(), 0, 1).getTime();
+        const fim = new Date(d.getFullYear() + 1, 0, 1).getTime();
         const projetosAno = await Metrics.totalAnoEspecifico(f.id, d.getFullYear());
-        const metaAno = atual.meta * 52.14; // média de semanas por ano
+        const pctMetaAno = await Metrics.mediaPctMetaPeriodo(f.id, inicio, Math.min(fim, Date.now() + 1));
         return {
           usuario: f,
           emFerias: false,
           projetos: projetosAno,
-          meta: metaAno,
-          pctMeta: metaAno > 0 ? projetosAno / metaAno : 0,
+          meta: null,
+          pctMeta: pctMetaAno,
           nota: atual.nota,
         };
       }
 
+      const inicioMes = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+      const fimMes = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
       const projetosMes = await Metrics.totalMesEspecifico(f.id, d.getFullYear(), d.getMonth());
-      const metaMes = atual.meta * 4.345;
+      const pctMetaMes = await Metrics.mediaPctMetaPeriodo(f.id, inicioMes, Math.min(fimMes, Date.now() + 1));
       return {
         usuario: f,
         emFerias: false,
         projetos: projetosMes,
-        meta: metaMes,
-        pctMeta: metaMes > 0 ? projetosMes / metaMes : 0,
+        meta: null,
+        pctMeta: pctMetaMes,
         nota: atual.nota,
       };
     })
@@ -407,6 +411,8 @@ async function renderDashboardEquipeConteudo(cont) {
               ${
                 l.emFerias
                   ? '<div class="row__meta">🏖️ De férias neste período</div>'
+                  : l.meta == null
+                  ? `<div class="row__meta">${l.projetos} projetos concluídos · ${(l.pctMeta * 100).toFixed(0)}% da meta (média semanal)</div>`
                   : `<div class="row__meta">${l.projetos} / ${l.meta.toFixed(1)} projetos · ${(l.pctMeta * 100).toFixed(0)}% da meta</div>`
               }
             </div>
@@ -416,8 +422,8 @@ async function renderDashboardEquipeConteudo(cont) {
         .join('')}
     </div>
 
-    ${modoMes ? '<div class="row__meta" style="margin-top:14px; text-align:center">Meta do mês é uma aproximação (meta semanal × 4,345 semanas).</div>' : ''}
-    ${modoAno ? '<div class="row__meta" style="margin-top:14px; text-align:center">Meta do ano é uma aproximação (meta semanal × 52,14 semanas).</div>' : ''}
+    ${modoMes ? '<div class="row__meta" style="margin-top:14px; text-align:center">% da Meta do mês é a média da %Meta de cada semana do período.</div>' : ''}
+    ${modoAno ? '<div class="row__meta" style="margin-top:14px; text-align:center">% da Meta do ano é a média da %Meta de cada semana do período.</div>' : ''}
   `;
 
   document.getElementById('grafico-equipe').innerHTML = graficoBarrasSVG(dadosGrafico, 100, '%');
@@ -592,22 +598,22 @@ async function renderDashboardIndividual(view, userId, nomeExibicao, subtitulo, 
    igual ao estilo usado no comparativo de Equipe. */
 async function renderIndividualPeriodoLongo(cont, userId, st) {
   const d = new Date(st.dataReferencia);
-  const resumoSemanaAtual = await Metrics.resumoSemanal(userId, 1, st.dataReferencia);
-  const metaSemanal = resumoSemanaAtual.atual.meta;
 
-  let projetos, meta, rotuloPeriodo;
+  let projetos, inicio, fim, rotuloPeriodo;
   if (st.periodoTipo === 'ano') {
     projetos = await Metrics.totalAnoEspecifico(userId, d.getFullYear());
-    meta = metaSemanal * 52.14;
+    inicio = new Date(d.getFullYear(), 0, 1).getTime();
+    fim = new Date(d.getFullYear() + 1, 0, 1).getTime();
     rotuloPeriodo = 'no ano';
   } else {
     projetos = await Metrics.totalMesEspecifico(userId, d.getFullYear(), d.getMonth());
-    meta = metaSemanal * 4.345;
+    inicio = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+    fim = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
     rotuloPeriodo = 'no mês';
   }
-  const pctMeta = meta > 0 ? projetos / meta : 0;
+  const pctMeta = await Metrics.mediaPctMetaPeriodo(userId, inicio, Math.min(fim, Date.now() + 1));
 
-  if (projetos === 0 && meta <= 4) {
+  if (projetos === 0) {
     cont.innerHTML = `
       <div class="card">
         <div class="empty">
@@ -622,10 +628,9 @@ async function renderIndividualPeriodoLongo(cont, userId, st) {
   cont.innerHTML = `
     <div class="stat-grid">
       <div class="card"><div class="stat"><div class="stat__value">${projetos}</div><div class="stat__label">Projetos ${rotuloPeriodo}</div></div></div>
-      <div class="card"><div class="stat"><div class="stat__value">${meta.toFixed(1)}</div><div class="stat__label">Meta estimada</div></div></div>
       <div class="card"><div class="stat"><div class="stat__value">${(pctMeta * 100).toFixed(0)}%</div><div class="stat__label">% da Meta</div></div></div>
     </div>
-    <div class="row__meta" style="margin-top:14px; text-align:center">Meta ${rotuloPeriodo} é uma aproximação (meta semanal × ${st.periodoTipo === 'ano' ? '52,14 semanas' : '4,345 semanas'}).</div>
+    <div class="row__meta" style="margin-top:14px; text-align:center">% da Meta ${rotuloPeriodo} é a média da %Meta de cada semana do período.</div>
   `;
 }
 

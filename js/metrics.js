@@ -212,6 +212,32 @@ const Metrics = {
     return eventos.filter((e) => e.dataFinal >= inicioAno && e.dataFinal <= referenciaTs).length;
   },
 
+  /* %Meta de um período (mês/ano) = MÉDIA da %Meta de cada semana cujo
+     início cai dentro do período — igual à fórmula real da planilha
+     (AVERAGEIFS na coluna K, filtrando pela Data Inicial da semana).
+     NÃO é projetos-do-período dividido por meta-do-período. */
+  async mediaPctMetaPeriodo(funcionarioId, inicioTs, fimTs) {
+    const pesos = await this.pesos();
+    const eventos = await this.eventosConcluidosDoFuncionario(funcionarioId);
+    const feriasDoFunc = await this.feriasDoFuncionario(funcionarioId);
+    const indiceInicio = await this.indiceSemana(inicioTs);
+    const indiceFim = await this.indiceSemana(fimTs - 1);
+
+    let soma = 0;
+    let contadas = 0;
+    for (let i = indiceInicio; i <= indiceFim; i++) {
+      const range = await this.rangeDaSemanaPorIndice(i);
+      if (range.inicio < inicioTs || range.inicio >= fimTs) continue;
+      const semana = await this.calcularSemanaPorIndice(eventos, i, pesos, feriasDoFunc);
+      if (semana.emFerias) continue;
+      const meta = await this.calcularMetaPorIndice(eventos, i, pesos, feriasDoFunc);
+      const pctMeta = await this.calcularPctMeta(semana, meta, pesos);
+      soma += pctMeta;
+      contadas++;
+    }
+    return contadas > 0 ? soma / contadas : 0;
+  },
+
   async totalAnoEspecifico(funcionarioId, ano) {
     const eventos = await this.eventosConcluidosDoFuncionario(funcionarioId);
     const inicio = new Date(ano, 0, 1).getTime();

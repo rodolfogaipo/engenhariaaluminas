@@ -66,23 +66,35 @@ async function renderTreinoLista(view) {
 
   listaEl.innerHTML = ordenados
     .map((t) => {
-      const anexosHtml =
-        t.anexos && t.anexos.length
-          ? `<div class="row__meta" style="margin-top:8px; display:flex; flex-direction:column; gap:4px">
-              ${t.anexos
-                .map(
-                  (a) =>
-                    `<a href="${a.linkBaixar}" target="_blank" rel="noopener" style="color:var(--brand-700); font-weight:600; text-decoration:underline">${iconeAnexo(a.tipo)} ${escapeHtml(a.nome)} (${formatarTamanhoArquivoTreino(a.tamanho)})</a>`
-                )
-                .join('')}
-            </div>`
-          : '';
+      const imagens = (t.anexos || []).filter((a) => a.tipo === 'imagem');
+      const outros = (t.anexos || []).filter((a) => a.tipo !== 'imagem');
+      const fotosHtml = imagens.length
+        ? `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px">
+            ${imagens
+              .map(
+                (a) =>
+                  `<a href="${a.linkVisualizar}" target="_blank" rel="noopener"><img src="${a.linkImagem}" alt="${escapeHtml(a.nome)}" style="width:72px; height:72px; object-fit:cover; border-radius:8px; border:1px solid var(--line)" /></a>`
+              )
+              .join('')}
+          </div>`
+        : '';
+      const anexosHtml = outros.length
+        ? `<div class="row__meta" style="margin-top:8px; display:flex; flex-direction:column; gap:4px">
+            ${outros
+              .map(
+                (a) =>
+                  `<a href="${a.linkBaixar}" target="_blank" rel="noopener" style="color:var(--brand-700); font-weight:600; text-decoration:underline">${iconeAnexo(a.tipo)} ${escapeHtml(a.nome)} (${formatarTamanhoArquivoTreino(a.tamanho)})</a>`
+              )
+              .join('')}
+          </div>`
+        : '';
       return `
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap">
           <div style="flex:1 1 200px">
             <div class="row__title" style="font-size:15.5px">${escapeHtml(t.titulo)}</div>
             <div class="row__meta" style="margin-top:6px; white-space:pre-wrap">${escapeHtml(t.descricao || '')}</div>
+            ${fotosHtml}
             ${anexosHtml}
           </div>
           ${
@@ -224,9 +236,12 @@ function renderListaAnexosTreino(view) {
     .map(
       (a) => `
       <div class="row" style="padding:8px 0">
-        <div class="row__main">
-          <div class="row__title" style="font-size:13.5px">${iconeAnexo(a.tipo)} ${escapeHtml(a.nome)}</div>
-          <div class="row__meta">${formatarTamanhoArquivoTreino(a.tamanho)}</div>
+        <div class="row__main" style="display:flex; align-items:center; gap:10px">
+          ${a.tipo === 'imagem' ? `<img src="${a.linkImagem}" alt="" style="width:36px; height:36px; object-fit:cover; border-radius:6px; flex:0 0 auto" />` : ''}
+          <div>
+            <div class="row__title" style="font-size:13.5px">${iconeAnexo(a.tipo)} ${escapeHtml(a.nome)}</div>
+            <div class="row__meta">${formatarTamanhoArquivoTreino(a.tamanho)}</div>
+          </div>
         </div>
         <button class="btn btn--danger" data-remover-anexo-treino="${a.id}" style="padding:5px 10px; font-size:12px">Remover</button>
       </div>`

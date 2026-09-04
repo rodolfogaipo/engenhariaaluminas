@@ -108,8 +108,14 @@ async function atualizarListaCorte(view) {
               ? `<div class="row__meta">Corte: ${escapeHtml(p.funcionarioCorteNome || '—')} · Início ${Const.formatarData(p.dataInicioCorte)} · Fim ${Const.formatarData(p.dataFinalCorte)}</div>`
               : '';
 
+          const fotoThumb =
+            p.imagens && p.imagens.length
+              ? `<a href="${p.imagens[0].linkVisualizar}" target="_blank" rel="noopener" style="flex:0 0 auto"><img src="${p.imagens[0].linkImagem}" alt="" style="width:48px; height:48px; object-fit:cover; border-radius:8px; border:1px solid var(--line)" /></a>`
+              : '';
+
           return `
-          <div class="row" style="padding:14px 18px">
+          <div class="row" style="padding:14px 18px; gap:12px">
+            ${fotoThumb}
             <div class="row__main">
               <div class="row__title">${escapeHtml(p.nomeProduto)}</div>
               <div class="row__meta">${p.numeroPedido ? `Nº ${escapeHtml(p.numeroPedido)} · ` : ''}CNP por ${escapeHtml(p.funcionarioCNPNome || '—')} · Chegou em ${Const.formatarData(p.dataChegada)}</div>
@@ -152,6 +158,10 @@ async function atualizarListaCorte(view) {
   listaEl.querySelectorAll('[data-excluir]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       if (!confirm('Excluir este registro de Plano de Corte? A CNP original em Serviços não será apagada.')) return;
+      const pc = await DB.get('plano_corte', btn.dataset.excluir);
+      if (pc?.imagens) {
+        for (const img of pc.imagens) await Drive.excluirArquivo(img.id);
+      }
       await DB.delete('plano_corte', btn.dataset.excluir);
       atualizarListaCorte(view);
     });
@@ -169,6 +179,7 @@ async function criarEstadoFormularioCorte(pc) {
     dataInicioCorte: dataParaInputDate(pc.dataInicioCorte),
     dataFinalCorte: dataParaInputDate(pc.dataFinalCorte),
     funcionarioCorteId: pc.funcionarioCorteId || '',
+    imagens: pc.imagens ? [...pc.imagens] : [],
     usuarios,
     erro: '',
   };
@@ -213,6 +224,12 @@ async function renderCorteForm(view) {
         <input id="f-fim-corte" type="date" value="${escapeHtml(st.dataFinalCorte)}" />
       </div>
 
+      <div class="field">
+        <label for="f-imagens-corte">Foto do produto (opcional, ajuda o funcionário a identificar)</label>
+        <input id="f-imagens-corte" type="file" accept="image/*" multiple />
+        <div id="lista-imagens-corte" style="margin-top:10px"></div>
+      </div>
+
       <div class="row__meta" style="margin-bottom:14px">
         ${Auth.isAdmin() ? 'Como você é Admin, essa atualização já entra aprovada.' : 'Essa atualização fica pendente até o Admin aprovar.'}
       </div>
@@ -231,7 +248,64 @@ async function renderCorteForm(view) {
   document.getElementById('f-inicio-corte').addEventListener('input', (ev) => (st.dataInicioCorte = ev.target.value));
   document.getElementById('f-fim-corte').addEventListener('input', (ev) => (st.dataFinalCorte = ev.target.value));
 
+  const imagensInput = document.getElementById('f-imagens-corte');
+  imagensInput.addEventListener('change', async (ev) => {
+    const arquivos = Array.from(ev.target.files || []);
+    if (arquivos.length === 0) return;
+    imagensInput.disabled = true;
+    document.getElementById('btn-salvar-corte').disabled = true;
+    const cont = document.getElementById('lista-imagens-corte');
+    for (const arquivo of arquivos) {
+      cont.innerHTML = `<div class="row__meta">Enviando "${escapeHtml(arquivo.name)}" pro Google Drive… aguarde antes de Salvar</div>`;
+      try {
+        const img = await Drive.enviarArquivo(arquivo);
+        st.imagens.push(img);
+      } catch (e) {
+        st.erro = `Não consegui enviar "${arquivo.name}": ${e.message}`;
+      }
+    }
+    imagensInput.value = '';
+    imagensInput.disabled = false;
+    renderCorteForm(view);
+  });
+
+  renderListaImagensCorte(view);
+
   document.getElementById('btn-salvar-corte').addEventListener('click', () => salvarCorte(view));
+}
+
+function renderListaImagensCorte(view) {
+  const st = CorteView.formState;
+  const cont = document.getElementById('lista-imagens-corte');
+  if (!cont) return;
+
+  if (!st.imagens || st.imagens.length === 0) {
+    cont.innerHTML = '<div class="row__meta">Nenhuma foto ainda.</div>';
+    return;
+  }
+
+  cont.innerHTML = `
+    <div style="display:flex; gap:10px; flex-wrap:wrap">
+      ${st.imagens
+        .map(
+          (img) => `
+        <div style="position:relative">
+          <img src="${img.linkImagem}" alt="${escapeHtml(img.nome)}" style="width:80px; height:80px; object-fit:cover; border-radius:8px; border:1px solid var(--line)" />
+          <button data-remover-imagem-corte="${img.id}" style="position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:50%; background:var(--danger-fg); color:#fff; font-size:14px; line-height:1; display:flex; align-items:center; justify-content:center">×</button>
+        </div>`
+        )
+        .join('')}
+    </div>
+  `;
+
+  cont.querySelectorAll('[data-remover-imagem-corte]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.removerImagemCorte;
+      await Drive.excluirArquivo(id);
+      st.imagens = st.imagens.filter((img) => img.id !== id);
+      renderListaImagensCorte(view);
+    });
+  });
 }
 
 function voltarParaListaCorte() {
@@ -253,6 +327,7 @@ async function salvarCorte(view) {
   pc.status = st.status;
   pc.dataInicioCorte = st.dataInicioCorte ? Const.inputDateParaTimestamp(st.dataInicioCorte) : null;
   pc.dataFinalCorte = st.dataFinalCorte ? Const.inputDateParaTimestamp(st.dataFinalCorte) : null;
+  pc.imagens = st.imagens;
 
   if (st.funcionarioCorteId) {
     const func = st.usuarios.find((u) => u.id === st.funcionarioCorteId);
