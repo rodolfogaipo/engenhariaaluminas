@@ -122,7 +122,7 @@ async function atualizarListaMkt(view) {
               ${p.imagens
                 .map(
                   (img) =>
-                    `<a href="${img.linkVisualizar}" target="_blank" rel="noopener"><img src="${img.linkBaixar}" alt="${escapeHtml(img.nome)}" style="width:72px; height:72px; object-fit:cover; border-radius:8px; border:1px solid var(--line)" /></a>`
+                    `<a href="${img.linkVisualizar}" target="_blank" rel="noopener"><img src="${img.linkImagem}" alt="${escapeHtml(img.nome)}" style="width:72px; height:72px; object-fit:cover; border-radius:8px; border:1px solid var(--line)" /></a>`
                 )
                 .join('')}
             </div>`
@@ -293,7 +293,7 @@ function renderListaImagensMkt(view) {
         .map(
           (img) => `
         <div style="position:relative">
-          <img src="${img.linkBaixar}" alt="${escapeHtml(img.nome)}" style="width:80px; height:80px; object-fit:cover; border-radius:8px; border:1px solid var(--line)" />
+          <img src="${img.linkImagem}" alt="${escapeHtml(img.nome)}" style="width:80px; height:80px; object-fit:cover; border-radius:8px; border:1px solid var(--line)" />
           <button data-remover-imagem-mkt="${img.id}" style="position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:50%; background:var(--danger-fg); color:#fff; font-size:14px; line-height:1; display:flex; align-items:center; justify-content:center">×</button>
         </div>`
         )
@@ -348,6 +348,11 @@ async function salvarMkt(view) {
     registro.aprovado = 'pendente';
   }
 
-  await DB.put('produtos_mkt', registro);
-  voltarParaListaMkt();
+  try {
+    await DB.put('produtos_mkt', registro);
+    voltarParaListaMkt();
+  } catch (e) {
+    st.erro = 'Não consegui salvar: ' + e.message;
+    renderMktForm(view);
+  }
 }

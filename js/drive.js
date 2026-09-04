@@ -112,6 +112,7 @@ const Drive = {
       tamanho: file.size,
       linkVisualizar: `https://drive.google.com/file/d/${arquivo.id}/view`,
       linkBaixar: `https://drive.google.com/uc?export=download&id=${arquivo.id}`,
+      linkImagem: `https://lh3.googleusercontent.com/d/${arquivo.id}`,
       criadoEm: Date.now(),
     };
   },

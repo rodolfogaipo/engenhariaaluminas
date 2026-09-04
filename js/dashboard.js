@@ -17,7 +17,7 @@ async function renderDashboard(view) {
   const user = Auth.current;
 
   if (!Auth.isAdmin()) {
-    return renderDashboardIndividual(view, user.id, user.nome, 'Seu desempenho na semana atual');
+    return renderDashboardIndividual(view, user.id, user.nome, 'Seu desempenho');
   }
 
   view.innerHTML = `
@@ -224,6 +224,7 @@ async function renderDashboardEquipe(cont) {
         <div style="display:flex; gap:8px">
           <button class="btn ${DashboardAdminView.periodoTipo === 'semana' ? 'btn--primary' : 'btn--ghost'}" id="btn-periodo-semana" style="padding:8px 14px; font-size:13px">Semana</button>
           <button class="btn ${DashboardAdminView.periodoTipo === 'mes' ? 'btn--primary' : 'btn--ghost'}" id="btn-periodo-mes" style="padding:8px 14px; font-size:13px">Mês</button>
+          <button class="btn ${DashboardAdminView.periodoTipo === 'ano' ? 'btn--primary' : 'btn--ghost'}" id="btn-periodo-ano" style="padding:8px 14px; font-size:13px">Ano</button>
         </div>
         <div style="display:flex; align-items:center; gap:10px">
           <button class="topbar__icon-btn" id="btn-periodo-anterior" style="background:var(--paper-dim)" aria-label="Período anterior">
@@ -249,6 +250,10 @@ async function renderDashboardEquipe(cont) {
     DashboardAdminView.periodoTipo = 'mes';
     renderDashboardEquipe(cont);
   });
+  document.getElementById('btn-periodo-ano').addEventListener('click', () => {
+    DashboardAdminView.periodoTipo = 'ano';
+    renderDashboardEquipe(cont);
+  });
   document.getElementById('btn-periodo-anterior').addEventListener('click', () => {
     navegarPeriodo(-1);
     renderDashboardEquipe(cont);
@@ -265,6 +270,9 @@ async function renderDashboardEquipe(cont) {
 
 async function rotuloPeriodo() {
   const d = new Date(DashboardAdminView.dataReferencia);
+  if (DashboardAdminView.periodoTipo === 'ano') {
+    return String(d.getFullYear());
+  }
   if (DashboardAdminView.periodoTipo === 'mes') {
     return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   }
@@ -278,7 +286,9 @@ async function rotuloPeriodo() {
 
 function navegarPeriodo(direcao) {
   const d = new Date(DashboardAdminView.dataReferencia);
-  if (DashboardAdminView.periodoTipo === 'mes') {
+  if (DashboardAdminView.periodoTipo === 'ano') {
+    d.setFullYear(d.getFullYear() + direcao);
+  } else if (DashboardAdminView.periodoTipo === 'mes') {
     d.setDate(1);
     d.setMonth(d.getMonth() + direcao);
   } else {
@@ -289,6 +299,10 @@ function navegarPeriodo(direcao) {
 
 async function periodoEhAtualOuFuturo() {
   const agora = Date.now();
+  if (DashboardAdminView.periodoTipo === 'ano') {
+    const d = new Date(DashboardAdminView.dataReferencia);
+    return d.getFullYear() === new Date().getFullYear();
+  }
   if (DashboardAdminView.periodoTipo === 'mes') {
     const d = new Date(DashboardAdminView.dataReferencia);
     const hoje = new Date();
@@ -316,16 +330,17 @@ async function renderDashboardEquipeConteudo(cont) {
 
   const dataRef = DashboardAdminView.dataReferencia;
   const modoMes = DashboardAdminView.periodoTipo === 'mes';
+  const modoAno = DashboardAdminView.periodoTipo === 'ano';
 
   const linhas = await Promise.all(
     funcionarios.map(async (f) => {
       // a "nota" e a "meta semanal" sempre vêm da semana que contém a data de
-      // referência — em modo mês, usamos o meta semanal como base pra estimar
-      // a meta do mês (meta semanal × semanas do período)
+      // referência — em modo mês/ano, usamos o meta semanal como base pra
+      // estimar a meta do período (meta semanal × semanas do período)
       const resumo = await Metrics.resumoSemanal(f.id, 1, dataRef);
       const atual = resumo.atual;
 
-      if (!modoMes) {
+      if (!modoMes && !modoAno) {
         return {
           usuario: f,
           emFerias: atual.emFerias,
@@ -337,6 +352,19 @@ async function renderDashboardEquipeConteudo(cont) {
       }
 
       const d = new Date(dataRef);
+      if (modoAno) {
+        const projetosAno = await Metrics.totalAnoEspecifico(f.id, d.getFullYear());
+        const metaAno = atual.meta * 52.14; // média de semanas por ano
+        return {
+          usuario: f,
+          emFerias: false,
+          projetos: projetosAno,
+          meta: metaAno,
+          pctMeta: metaAno > 0 ? projetosAno / metaAno : 0,
+          nota: atual.nota,
+        };
+      }
+
       const projetosMes = await Metrics.totalMesEspecifico(f.id, d.getFullYear(), d.getMonth());
       const metaMes = atual.meta * 4.345;
       return {
@@ -389,6 +417,7 @@ async function renderDashboardEquipeConteudo(cont) {
     </div>
 
     ${modoMes ? '<div class="row__meta" style="margin-top:14px; text-align:center">Meta do mês é uma aproximação (meta semanal × 4,345 semanas).</div>' : ''}
+    ${modoAno ? '<div class="row__meta" style="margin-top:14px; text-align:center">Meta do ano é uma aproximação (meta semanal × 52,14 semanas).</div>' : ''}
   `;
 
   document.getElementById('grafico-equipe').innerHTML = graficoBarrasSVG(dadosGrafico, 100, '%');
@@ -400,22 +429,119 @@ function primeiroNome(nomeCompleto) {
 
 /* ---------------- DESEMPENHO INDIVIDUAL (Funcionário, ou Admin em "Minha Produção") ---------------- */
 
+const IndividualDashboardView = {
+  periodoTipo: 'semana', // 'semana' | 'mes' | 'ano'
+  dataReferencia: Date.now(),
+};
+
+function rotuloPeriodoIndividual() {
+  const st = IndividualDashboardView;
+  const d = new Date(st.dataReferencia);
+  if (st.periodoTipo === 'ano') return String(d.getFullYear());
+  if (st.periodoTipo === 'mes') return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  const dia = d.getDay();
+  const inicio = new Date(d);
+  inicio.setDate(d.getDate() - dia);
+  const fim = new Date(inicio);
+  fim.setDate(inicio.getDate() + 6);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(inicio.getDate())}/${pad(inicio.getMonth() + 1)} a ${pad(fim.getDate())}/${pad(fim.getMonth() + 1)}`;
+}
+
+function navegarPeriodoIndividual(direcao) {
+  const st = IndividualDashboardView;
+  const d = new Date(st.dataReferencia);
+  if (st.periodoTipo === 'ano') {
+    d.setFullYear(d.getFullYear() + direcao);
+  } else if (st.periodoTipo === 'mes') {
+    d.setDate(1);
+    d.setMonth(d.getMonth() + direcao);
+  } else {
+    d.setDate(d.getDate() + direcao * 7);
+  }
+  st.dataReferencia = d.getTime();
+}
+
+function periodoIndividualEhAtualOuFuturo() {
+  const st = IndividualDashboardView;
+  const d = new Date(st.dataReferencia);
+  const hoje = new Date();
+  if (st.periodoTipo === 'ano') return d.getFullYear() === hoje.getFullYear();
+  if (st.periodoTipo === 'mes') return d.getFullYear() === hoje.getFullYear() && d.getMonth() === hoje.getMonth();
+  const inicioSemana = (data) => {
+    const x = new Date(data);
+    x.setDate(x.getDate() - x.getDay());
+    x.setHours(0, 0, 0, 0);
+    return x.getTime();
+  };
+  return inicioSemana(st.dataReferencia) === inicioSemana(hoje.getTime());
+}
+
 async function renderDashboardIndividual(view, userId, nomeExibicao, subtitulo, ehModoAdmin) {
+  const st = IndividualDashboardView;
+
   view.innerHTML = `
     ${!ehModoAdmin ? `<h2 class="section-title">Olá, ${escapeHtml(primeiroNome(nomeExibicao))}</h2>` : ''}
-    <p class="section-sub">${subtitulo}</p>
+    <p class="section-sub" style="margin-bottom:14px">${subtitulo}</p>
+
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
+        <div style="display:flex; gap:8px">
+          <button class="btn ${st.periodoTipo === 'semana' ? 'btn--primary' : 'btn--ghost'}" id="btn-ind-semana" style="padding:8px 12px; font-size:13px">Semana</button>
+          <button class="btn ${st.periodoTipo === 'mes' ? 'btn--primary' : 'btn--ghost'}" id="btn-ind-mes" style="padding:8px 12px; font-size:13px">Mês</button>
+          <button class="btn ${st.periodoTipo === 'ano' ? 'btn--primary' : 'btn--ghost'}" id="btn-ind-ano" style="padding:8px 12px; font-size:13px">Ano</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px">
+          <button class="topbar__icon-btn" id="btn-ind-anterior" style="background:var(--paper-dim)" aria-label="Período anterior">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <span id="rotulo-ind" style="font-weight:600; font-size:14px; min-width:130px; text-align:center">${rotuloPeriodoIndividual()}</span>
+          <button class="topbar__icon-btn" id="btn-ind-proximo" style="background:var(--paper-dim)" aria-label="Próximo período">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="dash-conteudo-individual">
       <div class="wip">${ICONS.wip}<b>Calculando…</b></div>
     </div>
   `;
 
-  const resumo = await Metrics.resumoSemanal(userId, 6);
+  document.getElementById('btn-ind-semana').addEventListener('click', () => {
+    st.periodoTipo = 'semana';
+    renderDashboardIndividual(view, userId, nomeExibicao, subtitulo, ehModoAdmin);
+  });
+  document.getElementById('btn-ind-mes').addEventListener('click', () => {
+    st.periodoTipo = 'mes';
+    renderDashboardIndividual(view, userId, nomeExibicao, subtitulo, ehModoAdmin);
+  });
+  document.getElementById('btn-ind-ano').addEventListener('click', () => {
+    st.periodoTipo = 'ano';
+    renderDashboardIndividual(view, userId, nomeExibicao, subtitulo, ehModoAdmin);
+  });
+  document.getElementById('btn-ind-anterior').addEventListener('click', () => {
+    navegarPeriodoIndividual(-1);
+    renderDashboardIndividual(view, userId, nomeExibicao, subtitulo, ehModoAdmin);
+  });
+  const btnProximo = document.getElementById('btn-ind-proximo');
+  btnProximo.disabled = periodoIndividualEhAtualOuFuturo();
+  btnProximo.addEventListener('click', () => {
+    navegarPeriodoIndividual(1);
+    renderDashboardIndividual(view, userId, nomeExibicao, subtitulo, ehModoAdmin);
+  });
+
+  const cont = document.getElementById('dash-conteudo-individual');
+
+  if (st.periodoTipo !== 'semana') {
+    return renderIndividualPeriodoLongo(cont, userId, st);
+  }
+
+  const resumo = await Metrics.resumoSemanal(userId, 6, st.dataReferencia);
   const mensal = await Metrics.totalMesCalendario(userId);
   const anual = await Metrics.totalAnoCalendario(userId);
   const atual = resumo.atual;
   const semTrabalhoNenhum = resumo.semanas.every((s) => s.projetos === 0) && mensal === 0 && anual === 0;
-
-  const cont = document.getElementById('dash-conteudo-individual');
 
   if (semTrabalhoNenhum) {
     cont.innerHTML = `
@@ -459,6 +585,48 @@ async function renderDashboardIndividual(view, userId, nomeExibicao, subtitulo, 
     value: s.emFerias || s.pctMeta == null ? 0 : Math.round(s.pctMeta * 100),
   }));
   document.getElementById('grafico-nota').innerHTML = graficoBarrasSVG(dadosGrafico, 100, '%');
+}
+
+/* Mês/Ano: Nota e Tendência são conceitos semanais, então aqui mostramos
+   uma versão mais simples — total de projetos do período e % da meta,
+   igual ao estilo usado no comparativo de Equipe. */
+async function renderIndividualPeriodoLongo(cont, userId, st) {
+  const d = new Date(st.dataReferencia);
+  const resumoSemanaAtual = await Metrics.resumoSemanal(userId, 1, st.dataReferencia);
+  const metaSemanal = resumoSemanaAtual.atual.meta;
+
+  let projetos, meta, rotuloPeriodo;
+  if (st.periodoTipo === 'ano') {
+    projetos = await Metrics.totalAnoEspecifico(userId, d.getFullYear());
+    meta = metaSemanal * 52.14;
+    rotuloPeriodo = 'no ano';
+  } else {
+    projetos = await Metrics.totalMesEspecifico(userId, d.getFullYear(), d.getMonth());
+    meta = metaSemanal * 4.345;
+    rotuloPeriodo = 'no mês';
+  }
+  const pctMeta = meta > 0 ? projetos / meta : 0;
+
+  if (projetos === 0 && meta <= 4) {
+    cont.innerHTML = `
+      <div class="card">
+        <div class="empty">
+          <div class="empty__title">Nenhum serviço concluído nesse período</div>
+          <div class="empty__sub">Os números aparecem aqui assim que houver um serviço concluído e validado em "Serviços".</div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  cont.innerHTML = `
+    <div class="stat-grid">
+      <div class="card"><div class="stat"><div class="stat__value">${projetos}</div><div class="stat__label">Projetos ${rotuloPeriodo}</div></div></div>
+      <div class="card"><div class="stat"><div class="stat__value">${meta.toFixed(1)}</div><div class="stat__label">Meta estimada</div></div></div>
+      <div class="card"><div class="stat"><div class="stat__value">${(pctMeta * 100).toFixed(0)}%</div><div class="stat__label">% da Meta</div></div></div>
+    </div>
+    <div class="row__meta" style="margin-top:14px; text-align:center">Meta ${rotuloPeriodo} é uma aproximação (meta semanal × ${st.periodoTipo === 'ano' ? '52,14 semanas' : '4,345 semanas'}).</div>
+  `;
 }
 
 function rotuloSemana(ts) {
