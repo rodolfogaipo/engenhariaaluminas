@@ -35,8 +35,11 @@ async function renderAvisosLista(view) {
       ${Auth.isAdmin() ? '<button class="btn btn--primary" id="btn-novo-aviso">+ Novo Aviso</button>' : ''}
     </div>
 
+    <div id="avisos-prazo"></div>
     <div id="lista-avisos"></div>
   `;
+
+  await renderAvisosDePrazo(document.getElementById('avisos-prazo'));
 
   if (Auth.isAdmin()) {
     document.getElementById('btn-novo-aviso').addEventListener('click', () => {
@@ -255,4 +258,57 @@ async function salvarAviso(view) {
 
   await DB.put('avisos', registro);
   voltarParaListaAvisos();
+}
+
+/* ---------------- AVISOS AUTOMÁTICOS DE PRAZO ----------------
+   Não são avisos cadastrados — são calculados na hora, olhando os
+   serviços em aberto (sem Data Final) com Data Programada perto ou
+   já vencida. Sempre atualizado, sem precisar o Admin criar nada. */
+
+const DIAS_PERTO_DO_PRAZO = 3;
+
+async function renderAvisosDePrazo(cont) {
+  if (!cont) return;
+  const servicos = await DB.getAll('servicos');
+  const agora = Date.now();
+  const limitePerto = agora + DIAS_PERTO_DO_PRAZO * 24 * 60 * 60 * 1000;
+
+  const abertos = servicos.filter((s) => !s.dataFinal && s.dataProgramada);
+  const atrasados = abertos.filter((s) => s.dataProgramada < agora).sort((a, b) => a.dataProgramada - b.dataProgramada);
+  const pertoDoPrazo = abertos
+    .filter((s) => s.dataProgramada >= agora && s.dataProgramada <= limitePerto)
+    .sort((a, b) => a.dataProgramada - b.dataProgramada);
+
+  if (atrasados.length === 0 && pertoDoPrazo.length === 0) {
+    cont.innerHTML = '';
+    return;
+  }
+
+  const linha = (s, atrasado) => `
+    <div class="row" style="padding:10px 18px">
+      <div class="row__main">
+        <div class="row__title" style="font-size:14px">${escapeHtml(s.nome)}</div>
+        <div class="row__meta">${escapeHtml(s.tipo)} · ${escapeHtml(s.funcionarioNome || 'Disponível')} · Prazo: ${Const.formatarData(s.dataProgramada)}</div>
+      </div>
+      <span class="badge ${atrasado ? 'badge--danger' : 'badge--warn'}">${atrasado ? 'Atrasado' : 'Perto do prazo'}</span>
+    </div>`;
+
+  cont.innerHTML = `
+    ${
+      atrasados.length > 0
+        ? `<div class="card" style="border-color:var(--danger-fg); padding:0; margin-bottom:14px">
+            <div class="row__meta" style="padding:12px 18px 0">⚠️ Atrasados (${atrasados.length})</div>
+            ${atrasados.map((s) => linha(s, true)).join('')}
+          </div>`
+        : ''
+    }
+    ${
+      pertoDoPrazo.length > 0
+        ? `<div class="card" style="border-color:var(--warn-fg); padding:0; margin-bottom:14px">
+            <div class="row__meta" style="padding:12px 18px 0">⏰ Perto do prazo — próximos ${DIAS_PERTO_DO_PRAZO} dias (${pertoDoPrazo.length})</div>
+            ${pertoDoPrazo.map((s) => linha(s, false)).join('')}
+          </div>`
+        : ''
+    }
+  `;
 }

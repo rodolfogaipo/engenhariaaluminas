@@ -55,11 +55,67 @@ async function renderAdminMais(cont) {
   const flag = jaImportado ? await DB.get('config', 'planilha_importada_em') : null;
   const precisaCorrigir = await CorrigirFuncionarios.precisaCorrigir();
   const gruposDuplicados = await MesclarDuplicados.detectar();
+  const pendencias = await contarPendencias();
+  const insights = await Insights.gerar();
 
   cont.innerHTML = `
+    <div class="card">
+      <h3 class="section-title" style="font-size:16px">🔔 Pendências de aprovação</h3>
+      ${
+        pendencias.total === 0
+          ? '<p class="section-sub" style="margin:0">Nada esperando aprovação no momento.</p>'
+          : `<div style="display:flex; flex-direction:column; gap:8px">
+              ${
+                pendencias.servicos > 0
+                  ? `<div class="row__meta">📋 <b>${pendencias.servicos}</b> serviço(s) aguardando aprovação — Serviços</div>`
+                  : ''
+              }
+              ${
+                pendencias.conclusoes > 0
+                  ? `<div class="row__meta">✅ <b>${pendencias.conclusoes}</b> conclusão(ões) aguardando validação — Serviços</div>`
+                  : ''
+              }
+              ${
+                pendencias.planoCorte > 0
+                  ? `<div class="row__meta">✂️ <b>${pendencias.planoCorte}</b> atualização(ões) de corte aguardando aprovação — Corte</div>`
+                  : ''
+              }
+              ${
+                pendencias.mkt > 0
+                  ? `<div class="row__meta">🛋️ <b>${pendencias.mkt}</b> produto(s) MKT aguardando aprovação — MKT</div>`
+                  : ''
+              }
+            </div>`
+      }
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3 class="section-title" style="font-size:16px">💡 Alertas e ideias sobre produtividade</h3>
+      <p class="section-sub">Baseado em regras, analisando os dados da equipe — não é IA generativa, roda tudo local.</p>
+      ${
+        insights.length === 0
+          ? '<p class="section-sub" style="margin:0">Nenhum alerta no momento.</p>'
+          : `<div style="display:flex; flex-direction:column; gap:8px">
+              ${insights
+                .map(
+                  (i) =>
+                    `<div class="row__meta">${i.tipo === 'destaque' ? '⭐' : '⚠️'} ${escapeHtml(i.texto)}</div>`
+                )
+                .join('')}
+            </div>`
+      }
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3 class="section-title" style="font-size:16px">💾 Backup dos dados</h3>
+      <p class="section-sub">Baixa uma cópia de tudo (serviços, corte, usuários, avisos, etc.) num arquivo .json, pra guardar no seu computador.</p>
+      <div id="backup-status" class="row__meta" style="margin-bottom:10px"></div>
+      <button class="btn btn--primary" id="btn-fazer-backup">Fazer backup agora</button>
+    </div>
+
     ${
       gruposDuplicados.length > 0
-        ? `<div class="card" style="border-color:var(--brand-500)">
+        ? `<div class="card" style="border-color:var(--brand-500); margin-top:16px">
             <h3 class="section-title" style="font-size:16px">Contas de usuário duplicadas</h3>
             <p class="section-sub">Encontrei ${gruposDuplicados.length} nome(s) com mais de uma conta (ex: duas contas "Administrador" — acontece se dois aparelhos abriram o app quase juntos antes de sincronizar). Isso religa o histórico à conta mais antiga e apaga as duplicatas.</p>
             <div id="mesclar-status" class="row__meta" style="margin-bottom:10px"></div>
@@ -93,15 +149,21 @@ async function renderAdminMais(cont) {
         ${jaImportado ? '<button class="btn btn--danger" id="btn-remover-importados">Remover dados importados</button>' : ''}
       </div>
     </div>
-
-    <div class="card" style="margin-top:16px">
-      <div class="wip">
-        ${ICONS.wip}
-        <b>Mais ferramentas a caminho</b>
-        <div class="empty__sub">Alertas automáticos e exportação de dados continuam chegando nos próximos passos.</div>
-      </div>
-    </div>
   `;
+
+  document.getElementById('btn-fazer-backup').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-fazer-backup');
+    const statusEl = document.getElementById('backup-status');
+    btn.disabled = true;
+    statusEl.textContent = 'Preparando backup…';
+    try {
+      await fazerBackup();
+      statusEl.textContent = 'Pronto! O download deve ter começado.';
+    } catch (e) {
+      statusEl.textContent = 'Erro ao fazer backup: ' + e.message;
+    }
+    btn.disabled = false;
+  });
 
   if (gruposDuplicados.length > 0) {
     document.getElementById('btn-mesclar-duplicados').addEventListener('click', async () => {
@@ -669,4 +731,59 @@ function renderFormCategoria(cont, view) {
       renderFormCategoria(cont, view);
     }
   });
+}
+
+/* ---------------- PENDÊNCIAS DE APROVAÇÃO ---------------- */
+
+async function contarPendencias() {
+  const [servicos, planoCorte, produtosMkt] = await Promise.all([
+    DB.getAll('servicos'),
+    DB.getAll('plano_corte'),
+    DB.getAll('produtos_mkt'),
+  ]);
+
+  const pendencias = {
+    servicos: servicos.filter((s) => s.aprovado === 'pendente').length,
+    conclusoes: servicos.filter((s) => !s.dataFinal && s.concluidoInformadoEm).length,
+    planoCorte: planoCorte.filter((p) => p.aprovado === 'pendente').length,
+    mkt: produtosMkt.filter((p) => p.aprovado === 'pendente').length,
+  };
+  pendencias.total = pendencias.servicos + pendencias.conclusoes + pendencias.planoCorte + pendencias.mkt;
+  return pendencias;
+}
+
+/* ---------------- BACKUP ---------------- */
+
+async function fazerBackup() {
+  const colecoes = [
+    'usuarios',
+    'servicos',
+    'plano_corte',
+    'ferias',
+    'avisos',
+    'anotacoes_admin',
+    'diario_admin',
+    'treinamento',
+    'config',
+    'destaques',
+    'catalogo_itens',
+    'categorias_servico',
+    'produtos_mkt',
+  ];
+
+  const dados = { exportadoEm: Date.now() };
+  for (const nome of colecoes) {
+    dados[nome] = await DB.getAll(nome);
+  }
+
+  const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const dataStr = new Date().toISOString().slice(0, 10);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `backup-engenharia-aluminas-${dataStr}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
