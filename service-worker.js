@@ -6,7 +6,7 @@
    vez de continuar usando a cópia antiga guardada no celular.
    ========================================================= */
 
-const CACHE_VERSION = 'v23';
+const CACHE_VERSION = 'v24';
 const CACHE_NAME = `controle-equipe-${CACHE_VERSION}`;
 
 const CORE_ASSETS = [
@@ -59,6 +59,12 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
+
+  // nunca mexe em pedidos de fora do próprio site (Firebase/Firestore/
+  // gstatic) — deixa o navegador cuidar disso direto, sem passar pelo
+  // nosso cache, pra não atrapalhar a conexão em tempo real
+  if (url.origin !== self.location.origin) return;
+
   const ehArquivoDeDados = url.pathname.includes('/data/');
 
   if (ehArquivoDeDados) {
