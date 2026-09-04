@@ -3,28 +3,32 @@
 
    Mantém EXATAMENTE a mesma API que o app já usa (DB.get, DB.put,
    DB.getAll, DB.putMany, DB.delete) — só troca o que tem por trás,
-   do IndexedDB local para o Firestore compartilhado. Nenhum outro
-   arquivo do app precisa mudar por causa disso.
+   do IndexedDB local para o Firestore compartilhado.
 
-   Estratégia pra não estourar a cota gratuita do Firestore: cada
-   "coleção" (usuarios, servicos, etc.) é sincronizada UMA VEZ por
-   sessão via onSnapshot, e fica guardada em memória. Depois disso,
-   ler os dados (getAll/get) não custa nada — só escrever (put/
-   delete) fala com o Firestore, e as mudanças chegam sozinhas pra
-   todo mundo em tempo real. Combinado com o cache offline do
-   Firestore, o app continua funcionando sem internet também.
+   Duas coisas importantes pra não travar o app com coleções grandes
+   (ex: milhares de serviços importados da planilha):
+
+   1. Cache local persistente "de verdade" (API moderna do Firestore)
+      — depois da primeira sincronização, reabrir o app é rápido,
+      porque os dados já estão salvos no próprio aparelho.
+
+   2. As telas se atualizam sozinhas conforme os dados chegam, em vez
+      de ficar tudo travado esperando a coleção inteira antes de
+      mostrar qualquer coisa. Isso é o que também faz a sincronização
+      em tempo real entre aparelhos funcionar.
    ========================================================= */
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js';
 import {
-  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   collection,
   doc,
   setDoc,
   deleteDoc,
   onSnapshot,
   writeBatch,
-  enableIndexedDbPersistence,
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -37,19 +41,21 @@ const firebaseConfig = {
 };
 
 const firebaseApp = initializeApp(firebaseConfig);
-const firestore = getFirestore(firebaseApp);
 
-// cache offline: deixa o app funcionar sem internet e evita re-baixar
-// tudo de novo a cada abertura (só sincroniza o que mudou)
-enableIndexedDbPersistence(firestore).catch(() => {
-  // acontece se tiver mais de uma aba aberta ao mesmo tempo — sem problema,
-  // o app continua funcionando, só sem persistência offline nessa aba
+// cache local persistente (aceita várias abas abertas ao mesmo tempo,
+// sem falhar silenciosamente como a API antiga fazia)
+const firestore = initializeFirestore(firebaseApp, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 });
 
 const chaveDoRegistro = (record) => String(record.id ?? record.chave);
 
-// coleções sincronizadas em memória: nome -> { mapa, pronto, resolvePronto }
+// coleções sincronizadas em memória: nome -> { mapa, pronto }
 const _colecoes = {};
+
+// o app.js registra aqui uma função pra re-renderizar a tela atual
+// sempre que os dados mudarem (localmente ou vindos de outro aparelho)
+window.aoDadosMudarem = () => {};
 
 function garantirColecao(nome) {
   if (_colecoes[nome]) return _colecoes[nome];
@@ -70,9 +76,12 @@ function garantirColecao(nome) {
         if (primeiraVez) {
           primeiraVez = false;
           resolve();
+        } else {
+          // atualização depois da primeira carga: atualiza a tela sozinho
+          window.aoDadosMudarem();
         }
       },
-      () => resolve() // se der erro (ex: offline na 1ª vez), libera assim mesmo
+      () => resolve() // se der erro (ex: sem internet na 1ª vez), libera assim mesmo
     );
   });
 

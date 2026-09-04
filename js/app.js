@@ -104,12 +104,23 @@ function renderShell(root) {
   `;
 
   document.getElementById('btn-logout').addEventListener('click', () => {
+    window.aoDadosMudarem = () => {};
     Auth.logout();
     renderLogin(root);
   });
 
   renderTabbar();
   renderView(activeTab);
+
+  let debounceTimer = null;
+  window.aoDadosMudarem = () => {
+    if (!Auth.current) return;
+    const el = document.activeElement;
+    const emCampoDeForm = el && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
+    if (emCampoDeForm) return; // não atualiza enquanto a pessoa está preenchendo algo
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => renderView(activeTab), 250);
+  };
 }
 
 function renderTabbar() {
