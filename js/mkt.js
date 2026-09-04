@@ -20,6 +20,12 @@ function podeAprovarMkt() {
   return Auth.isAdmin();
 }
 
+function formatarTamanhoArquivoMkt(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 const CAMPOS_MEDIDA = [
   { chave: 'altura', label: 'Altura' },
   { chave: 'largura', label: 'Largura' },
@@ -110,6 +116,17 @@ async function atualizarListaMkt(view) {
         podeAprovar && p.aprovado !== 'aprovado'
           ? `<button class="btn btn--ghost" data-aprovar-mkt="${p.id}" style="padding:6px 12px; font-size:13px">Aprovar</button>`
           : '';
+      const fotosHtml =
+        p.imagens && p.imagens.length
+          ? `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px">
+              ${p.imagens
+                .map(
+                  (img) =>
+                    `<a href="${img.linkVisualizar}" target="_blank" rel="noopener"><img src="${img.linkBaixar}" alt="${escapeHtml(img.nome)}" style="width:72px; height:72px; object-fit:cover; border-radius:8px; border:1px solid var(--line)" /></a>`
+                )
+                .join('')}
+            </div>`
+          : '';
       return `
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap">
@@ -117,6 +134,7 @@ async function atualizarListaMkt(view) {
             <div class="row__title" style="font-size:15.5px">${escapeHtml(p.nome)}</div>
             <div class="row__meta" style="margin-top:4px">${medidas || 'Sem medidas preenchidas'}</div>
             <div class="row__meta">${escapeHtml(p.criadoPorNome || '—')}</div>
+            ${fotosHtml}
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px">
             ${statusBadge}
@@ -160,7 +178,11 @@ async function atualizarListaMkt(view) {
 
   listaEl.querySelectorAll('[data-excluir-mkt]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Excluir este produto?')) return;
+      if (!confirm('Excluir este produto? As fotos também somem do Drive.')) return;
+      const p = await DB.get('produtos_mkt', btn.dataset.excluirMkt);
+      if (p?.imagens) {
+        for (const img of p.imagens) await Drive.excluirArquivo(img.id);
+      }
       await DB.delete('produtos_mkt', btn.dataset.excluirMkt);
       atualizarListaMkt(view);
     });
@@ -170,13 +192,13 @@ async function atualizarListaMkt(view) {
 /* ---------------- FORMULÁRIO ---------------- */
 
 function criarEstadoMktVazio() {
-  const st = { editId: null, nome: '', erro: '' };
+  const st = { editId: null, nome: '', imagens: [], erro: '' };
   CAMPOS_MEDIDA.forEach((c) => (st[c.chave] = ''));
   return st;
 }
 
 function criarEstadoMktEdicao(p) {
-  const st = { editId: p.id, nome: p.nome || '', erro: '' };
+  const st = { editId: p.id, nome: p.nome || '', imagens: p.imagens ? [...p.imagens] : [], erro: '' };
   CAMPOS_MEDIDA.forEach((c) => (st[c.chave] = p[c.chave] != null ? String(p[c.chave]) : ''));
   return st;
 }
@@ -209,6 +231,12 @@ async function renderMktForm(view) {
         </div>`
       ).join('')}
 
+      <div class="field">
+        <label for="f-mkt-imagens">Fotos do produto (opcional, até 200MB cada)</label>
+        <input id="f-mkt-imagens" type="file" accept="image/*" multiple />
+        <div id="lista-imagens-mkt" style="margin-top:10px"></div>
+      </div>
+
       <div style="display:flex; gap:10px; margin-top:8px">
         <button class="btn btn--ghost" id="btn-cancelar-mkt" style="flex:1">Cancelar</button>
         <button class="btn btn--primary" id="btn-salvar-mkt" style="flex:2">Salvar</button>
@@ -223,7 +251,64 @@ async function renderMktForm(view) {
     document.getElementById(`f-mkt-${c.chave}`).addEventListener('input', (ev) => (st[c.chave] = ev.target.value));
   });
 
+  const imagensInput = document.getElementById('f-mkt-imagens');
+  imagensInput.addEventListener('change', async (ev) => {
+    const arquivos = Array.from(ev.target.files || []);
+    if (arquivos.length === 0) return;
+    imagensInput.disabled = true;
+    document.getElementById('btn-salvar-mkt').disabled = true;
+    const cont = document.getElementById('lista-imagens-mkt');
+    for (const arquivo of arquivos) {
+      cont.innerHTML = `<div class="row__meta">Enviando "${escapeHtml(arquivo.name)}" pro Google Drive… aguarde antes de Salvar</div>`;
+      try {
+        const img = await Drive.enviarArquivo(arquivo);
+        st.imagens.push(img);
+      } catch (e) {
+        st.erro = `Não consegui enviar "${arquivo.name}": ${e.message}`;
+      }
+    }
+    imagensInput.value = '';
+    imagensInput.disabled = false;
+    renderMktForm(view);
+  });
+
+  renderListaImagensMkt(view);
+
   document.getElementById('btn-salvar-mkt').addEventListener('click', () => salvarMkt(view));
+}
+
+function renderListaImagensMkt(view) {
+  const st = MktView.formState;
+  const cont = document.getElementById('lista-imagens-mkt');
+  if (!cont) return;
+
+  if (!st.imagens || st.imagens.length === 0) {
+    cont.innerHTML = '<div class="row__meta">Nenhuma foto ainda.</div>';
+    return;
+  }
+
+  cont.innerHTML = `
+    <div style="display:flex; gap:10px; flex-wrap:wrap">
+      ${st.imagens
+        .map(
+          (img) => `
+        <div style="position:relative">
+          <img src="${img.linkBaixar}" alt="${escapeHtml(img.nome)}" style="width:80px; height:80px; object-fit:cover; border-radius:8px; border:1px solid var(--line)" />
+          <button data-remover-imagem-mkt="${img.id}" style="position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:50%; background:var(--danger-fg); color:#fff; font-size:14px; line-height:1; display:flex; align-items:center; justify-content:center">×</button>
+        </div>`
+        )
+        .join('')}
+    </div>
+  `;
+
+  cont.querySelectorAll('[data-remover-imagem-mkt]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.removerImagemMkt;
+      await Drive.excluirArquivo(id);
+      st.imagens = st.imagens.filter((img) => img.id !== id);
+      renderListaImagensMkt(view);
+    });
+  });
 }
 
 function voltarParaListaMkt() {
@@ -247,6 +332,7 @@ async function salvarMkt(view) {
     : { id: dbUtil.uid(), criadoEm: Date.now(), criadoPorId: user.id, criadoPorNome: user.nome };
 
   registro.nome = nome;
+  registro.imagens = st.imagens;
   CAMPOS_MEDIDA.forEach((c) => {
     const v = parseFloat(st[c.chave]);
     registro[c.chave] = isNaN(v) ? null : v;
