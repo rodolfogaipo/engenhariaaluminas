@@ -176,9 +176,10 @@ async function renderTreinoForm(view) {
     const arquivos = Array.from(ev.target.files || []);
     if (arquivos.length === 0) return;
     anexosInput.disabled = true;
+    document.getElementById('btn-salvar-treino').disabled = true;
     const cont = document.getElementById('lista-anexos-treino');
     for (const arquivo of arquivos) {
-      cont.innerHTML = `<div class="row__meta">Enviando "${escapeHtml(arquivo.name)}" pro Google Drive… (pode levar um tempo, dependendo do tamanho)</div>`;
+      cont.innerHTML = `<div class="row__meta">Enviando "${escapeHtml(arquivo.name)}" pro Google Drive… (pode levar um tempo, dependendo do tamanho) — aguarde antes de Salvar</div>`;
       try {
         const anexo = await Drive.enviarArquivo(arquivo);
         st.anexos.push(anexo);

@@ -25,6 +25,7 @@ const TABS_BASE = [
   { id: 'corte', label: 'Corte', icon: ICONS.corte },
   { id: 'avisos', label: 'Avisos', icon: ICONS.avisos },
   { id: 'ferias', label: 'Férias', icon: ICONS.ferias },
+  { id: 'mkt', label: 'MKT', icon: ICONS.mkt },
   { id: 'treino', label: 'Treino', icon: ICONS.treino },
 ];
 

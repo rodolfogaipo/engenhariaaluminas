@@ -550,6 +550,7 @@ async function renderServicoForm(view) {
         const arquivos = Array.from(ev.target.files || []);
         if (arquivos.length === 0) return;
         anexosInput.disabled = true;
+        document.getElementById('btn-salvar-servico').disabled = true;
         const listaCont = document.getElementById('lista-anexos-form');
         for (const arquivo of arquivos) {
           if (listaCont) listaCont.innerHTML = `<div class="row__meta">Enviando "${escapeHtml(arquivo.name)}" pro Google Drive…</div>`;

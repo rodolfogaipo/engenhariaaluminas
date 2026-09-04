@@ -13,7 +13,11 @@ const MktView = {
 
 function podeEditarMkt() {
   const tipo = Auth.current?.tipo;
-  return tipo === 'admin' || tipo === 'mkt';
+  return tipo === 'admin' || tipo === 'funcionario';
+}
+
+function podeAprovarMkt() {
+  return Auth.isAdmin();
 }
 
 const CAMPOS_MEDIDA = [
@@ -72,9 +76,12 @@ async function renderMktLista(view) {
 
 async function atualizarListaMkt(view) {
   const editavel = podeEditarMkt();
+  const podeAprovar = podeAprovarMkt();
+  const somenteAprovados = !editavel; // PCP e MKT (visualização) só veem itens aprovados
   const todos = await DB.getAll('produtos_mkt');
   const filtro = (MktView.filtroTexto || '').trim().toLowerCase();
   const filtrados = todos
+    .filter((p) => !somenteAprovados || p.aprovado === 'aprovado')
     .filter((p) => !filtro || (p.nome || '').toLowerCase().includes(filtro))
     .sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0));
 
@@ -97,27 +104,49 @@ async function atualizarListaMkt(view) {
       const medidas = CAMPOS_MEDIDA.filter((c) => p[c.chave] != null && p[c.chave] !== '')
         .map((c) => `${c.label}: ${escapeHtml(String(p[c.chave]))}cm`)
         .join(' · ');
+      const statusBadge =
+        p.aprovado === 'aprovado' ? '' : '<span class="badge badge--warn">Pendente aprovação</span>';
+      const aprovBtn =
+        podeAprovar && p.aprovado !== 'aprovado'
+          ? `<button class="btn btn--ghost" data-aprovar-mkt="${p.id}" style="padding:6px 12px; font-size:13px">Aprovar</button>`
+          : '';
       return `
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap">
           <div>
             <div class="row__title" style="font-size:15.5px">${escapeHtml(p.nome)}</div>
             <div class="row__meta" style="margin-top:4px">${medidas || 'Sem medidas preenchidas'}</div>
+            <div class="row__meta">${escapeHtml(p.criadoPorNome || '—')}</div>
           </div>
-          ${
-            editavel
-              ? `<div style="display:flex; gap:6px; flex:0 0 auto">
-                  <button class="btn btn--ghost" data-editar-mkt="${p.id}" style="padding:6px 12px; font-size:13px">Editar</button>
-                  <button class="btn btn--danger" data-excluir-mkt="${p.id}" style="padding:6px 12px; font-size:13px">Excluir</button>
-                </div>`
-              : ''
-          }
+          <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px">
+            ${statusBadge}
+            ${
+              editavel
+                ? `<div style="display:flex; gap:6px; flex:0 0 auto">
+                    ${aprovBtn}
+                    <button class="btn btn--ghost" data-editar-mkt="${p.id}" style="padding:6px 12px; font-size:13px">Editar</button>
+                    ${podeAprovar ? `<button class="btn btn--danger" data-excluir-mkt="${p.id}" style="padding:6px 12px; font-size:13px">Excluir</button>` : ''}
+                  </div>`
+                : ''
+            }
+          </div>
         </div>
       </div>`;
     })
     .join('');
 
   if (!editavel) return;
+
+  listaEl.querySelectorAll('[data-aprovar-mkt]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const p = await DB.get('produtos_mkt', btn.dataset.aprovarMkt);
+      if (!p) return;
+      p.aprovado = 'aprovado';
+      p.dataAprovacao = Date.now();
+      await DB.put('produtos_mkt', p);
+      atualizarListaMkt(view);
+    });
+  });
 
   listaEl.querySelectorAll('[data-editar-mkt]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -205,15 +234,17 @@ function voltarParaListaMkt() {
 
 async function salvarMkt(view) {
   const st = MktView.formState;
+  const user = Auth.current;
   const nome = (st.nome || '').trim();
   if (!nome) {
     st.erro = 'Digite o nome do produto.';
     return renderMktForm(view);
   }
 
+  const novo = !st.editId;
   const registro = st.editId
     ? await DB.get('produtos_mkt', st.editId)
-    : { id: dbUtil.uid(), criadoEm: Date.now() };
+    : { id: dbUtil.uid(), criadoEm: Date.now(), criadoPorId: user.id, criadoPorNome: user.nome };
 
   registro.nome = nome;
   CAMPOS_MEDIDA.forEach((c) => {
@@ -221,6 +252,15 @@ async function salvarMkt(view) {
     registro[c.chave] = isNaN(v) ? null : v;
   });
   registro.atualizadoEm = Date.now();
+
+  // Admin sempre aprova na hora; funcionário fica pendente até o Admin
+  // aprovar — vale tanto pra criar quanto pra editar de novo.
+  if (user.tipo === 'admin') {
+    registro.aprovado = 'aprovado';
+    registro.dataAprovacao = Date.now();
+  } else {
+    registro.aprovado = 'pendente';
+  }
 
   await DB.put('produtos_mkt', registro);
   voltarParaListaMkt();
