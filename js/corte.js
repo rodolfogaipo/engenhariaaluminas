@@ -59,6 +59,7 @@ async function atualizarListaCorte(view) {
   const filtro = Const_normaliza(CorteView.filtroTexto);
 
   const filtrados = todos
+    .filter((p) => (user.tipo === 'pcp' ? p.status === 'Concluído' : true))
     .filter((p) => {
       if (!filtro) return true;
       return (
@@ -93,7 +94,10 @@ async function atualizarListaCorte(view) {
             user.tipo === 'admin' && p.aprovado !== 'aprovado'
               ? `<button class="btn btn--ghost" data-aprovar="${p.id}" style="padding:6px 12px; font-size:13px">Aprovar</button>`
               : '';
-          const editBtn = `<button class="btn btn--ghost" data-editar="${p.id}" style="padding:6px 12px; font-size:13px">${user.tipo === 'admin' ? 'Editar' : 'Atualizar'}</button>`;
+          const editBtn =
+            user.tipo === 'pcp'
+              ? ''
+              : `<button class="btn btn--ghost" data-editar="${p.id}" style="padding:6px 12px; font-size:13px">${user.tipo === 'admin' ? 'Editar' : 'Atualizar'}</button>`;
           const delBtn =
             user.tipo === 'admin'
               ? `<button class="btn btn--danger" data-excluir="${p.id}" style="padding:6px 12px; font-size:13px">Excluir</button>`

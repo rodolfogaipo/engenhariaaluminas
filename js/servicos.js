@@ -26,14 +26,21 @@ async function renderServicos(view) {
 
 async function renderServicosLista(view) {
   const user = Auth.current;
+  const somenteLeitura = user.tipo === 'pcp';
 
   view.innerHTML = `
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap">
       <div>
         <h2 class="section-title" style="margin-bottom:2px">Serviços</h2>
-        <p class="section-sub" style="margin:0">${user.tipo === 'admin' ? 'Todos os lançamentos da equipe' : 'Disponíveis, seus em andamento, e o histórico concluído'}</p>
+        <p class="section-sub" style="margin:0">${
+          user.tipo === 'admin'
+            ? 'Todos os lançamentos da equipe'
+            : somenteLeitura
+            ? 'Histórico de serviços concluídos'
+            : 'Disponíveis, seus em andamento, e o histórico concluído'
+        }</p>
       </div>
-      <button class="btn btn--primary" id="btn-novo-servico">+ Novo Serviço</button>
+      ${somenteLeitura ? '' : '<button class="btn btn--primary" id="btn-novo-servico">+ Novo Serviço</button>'}
     </div>
 
     <div class="field" style="margin-bottom:20px">
@@ -43,11 +50,13 @@ async function renderServicosLista(view) {
     <div id="lista-servicos"></div>
   `;
 
-  document.getElementById('btn-novo-servico').addEventListener('click', () => {
-    ServicosView.subView = 'form';
-    ServicosView.formState = criarEstadoFormularioVazio();
-    renderView('servicos');
-  });
+  if (!somenteLeitura) {
+    document.getElementById('btn-novo-servico').addEventListener('click', () => {
+      ServicosView.subView = 'form';
+      ServicosView.formState = criarEstadoFormularioVazio();
+      renderView('servicos');
+    });
+  }
 
   const buscaInput = document.getElementById('busca-servico');
   buscaInput.addEventListener('input', () => {
@@ -75,7 +84,12 @@ async function atualizarListaServicos(view) {
   const user = Auth.current;
   const todos = await DB.getAll('servicos');
 
-  const visiveis = user.tipo === 'admin' ? todos : todos.filter((s) => servicoVisivelPara(s, user.id));
+  const visiveis =
+    user.tipo === 'admin'
+      ? todos
+      : user.tipo === 'pcp'
+      ? todos.filter((s) => estadoServico(s) === 'concluido')
+      : todos.filter((s) => servicoVisivelPara(s, user.id));
   const filtro = Const_normaliza(ServicosView.filtroTexto);
   const filtrados = visiveis
     .filter((s) => {
@@ -190,7 +204,7 @@ async function atualizarListaServicos(view) {
                   ? `<div class="row__meta" style="margin-top:4px">${s.anexos
                       .map(
                         (a) =>
-                          `<a href="${a.dataUrl}" download="${escapeHtml(a.nome)}" style="color:var(--brand-700); font-weight:600; text-decoration:underline; margin-right:12px">${a.tipo === 'pdf' ? '📄' : '🖼️'} ${escapeHtml(a.nome)}</a>`
+                          `<a href="${a.linkBaixar}" target="_blank" rel="noopener" style="color:var(--brand-700); font-weight:600; text-decoration:underline; margin-right:12px">${a.tipo === 'pdf' ? '📄' : a.tipo === 'video' ? '🎬' : '🖼️'} ${escapeHtml(a.nome)}</a>`
                       )
                       .join('')}</div>`
                   : ''
@@ -310,8 +324,10 @@ function renderListaAnexosForm(view) {
     .join('');
 
   cont.querySelectorAll('[data-remover-anexo]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      st.anexos = st.anexos.filter((a) => a.id !== btn.dataset.removerAnexo);
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.removerAnexo;
+      await Drive.excluirArquivo(id);
+      st.anexos = st.anexos.filter((a) => a.id !== id);
       renderListaAnexosForm(view);
     });
   });
@@ -323,73 +339,26 @@ function formatarTamanhoArquivo(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-const TAMANHO_MAX_ANEXO = 15 * 1024 * 1024; // 15MB por arquivo
-
-function arquivoParaAnexo(file) {
-  return new Promise((resolve, reject) => {
-    if (file.size > TAMANHO_MAX_ANEXO) {
-      reject(new Error('arquivo maior que 15MB'));
-      return;
-    }
-
-    const ehImagem = file.type.startsWith('image/');
-    const ehPdf = file.type === 'application/pdf';
-    if (!ehImagem && !ehPdf) {
-      reject(new Error('só PDF ou imagem são aceitos'));
-      return;
-    }
-
-    if (ehPdf) {
-      const reader = new FileReader();
-      reader.onload = () =>
-        resolve({
-          id: dbUtil.uid(),
-          nome: file.name,
-          tipo: 'pdf',
-          dataUrl: reader.result,
-          tamanho: file.size,
-          criadoEm: Date.now(),
-        });
-      reader.onerror = () => reject(new Error('falha ao ler o arquivo'));
-      reader.readAsDataURL(file);
-      return;
-    }
-
-    // imagem: reduz pra no máximo 1600px no lado maior, sem perder
-    // qualidade suficiente pra servir de referência
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        let { width, height } = img;
-        const MAX = 1600;
-        if (width > height && width > MAX) {
-          height = Math.round((height * MAX) / width);
-          width = MAX;
-        } else if (height > MAX) {
-          width = Math.round((width * MAX) / height);
-          height = MAX;
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
-        resolve({
-          id: dbUtil.uid(),
-          nome: file.name,
-          tipo: 'imagem',
-          dataUrl,
-          tamanho: Math.round((dataUrl.length * 3) / 4),
-          criadoEm: Date.now(),
-        });
-      };
-      img.onerror = () => reject(new Error('não consegui abrir essa imagem'));
-      img.src = reader.result;
-    };
-    reader.onerror = () => reject(new Error('falha ao ler o arquivo'));
-    reader.readAsDataURL(file);
-  });
+// Anexos vão pro Google Drive (link público de leitura) — o registro do
+// serviço só guarda o link, não o arquivo, então não tem limite apertado
+// de tamanho como teria guardando direto no Firestore.
+async function arquivoParaAnexo(file) {
+  const ehImagem = file.type.startsWith('image/');
+  const ehPdf = file.type === 'application/pdf';
+  const ehVideo = file.type.startsWith('video/');
+  if (!ehImagem && !ehPdf && !ehVideo) {
+    throw new Error('só PDF, imagem ou vídeo são aceitos');
+  }
+  const anexo = await Drive.enviarArquivo(file);
+  return {
+    id: anexo.id,
+    nome: anexo.nome,
+    tipo: anexo.tipo,
+    linkBaixar: anexo.linkBaixar,
+    linkVisualizar: anexo.linkVisualizar,
+    tamanho: anexo.tamanho,
+    criadoEm: anexo.criadoEm,
+  };
 }
 
 function Const_normaliza(s) {
@@ -516,8 +485,8 @@ async function renderServicoForm(view) {
       ${
         ehAdmin
           ? `<div class="field">
-              <label for="f-anexos">Anexos — PDF ou imagem (opcional)</label>
-              <input id="f-anexos" type="file" accept="application/pdf,image/*" multiple />
+              <label for="f-anexos">Anexos — PDF, imagem ou vídeo (opcional, até 200MB cada)</label>
+              <input id="f-anexos" type="file" accept="application/pdf,image/*,video/*" multiple />
               <div id="lista-anexos-form" style="margin-top:10px"></div>
             </div>`
           : ''
@@ -579,8 +548,11 @@ async function renderServicoForm(view) {
     if (anexosInput) {
       anexosInput.addEventListener('change', async (ev) => {
         const arquivos = Array.from(ev.target.files || []);
+        if (arquivos.length === 0) return;
         anexosInput.disabled = true;
+        const listaCont = document.getElementById('lista-anexos-form');
         for (const arquivo of arquivos) {
+          if (listaCont) listaCont.innerHTML = `<div class="row__meta">Enviando "${escapeHtml(arquivo.name)}" pro Google Drive…</div>`;
           try {
             const anexo = await arquivoParaAnexo(arquivo);
             st.anexos.push(anexo);

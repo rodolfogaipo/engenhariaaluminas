@@ -54,11 +54,23 @@ async function renderAdminMais(cont) {
   const jaImportado = await SeedImport.jaImportado();
   const flag = jaImportado ? await DB.get('config', 'planilha_importada_em') : null;
   const precisaCorrigir = await CorrigirFuncionarios.precisaCorrigir();
+  const gruposDuplicados = await MesclarDuplicados.detectar();
 
   cont.innerHTML = `
     ${
-      precisaCorrigir
+      gruposDuplicados.length > 0
         ? `<div class="card" style="border-color:var(--brand-500)">
+            <h3 class="section-title" style="font-size:16px">Contas de usuário duplicadas</h3>
+            <p class="section-sub">Encontrei ${gruposDuplicados.length} nome(s) com mais de uma conta (ex: duas contas "Administrador" — acontece se dois aparelhos abriram o app quase juntos antes de sincronizar). Isso religa o histórico à conta mais antiga e apaga as duplicatas.</p>
+            <div id="mesclar-status" class="row__meta" style="margin-bottom:10px"></div>
+            <button class="btn btn--primary" id="btn-mesclar-duplicados">Mesclar agora</button>
+          </div>`
+        : ''
+    }
+
+    ${
+      precisaCorrigir
+        ? `<div class="card" style="border-color:var(--brand-500); margin-top:16px">
             <h3 class="section-title" style="font-size:16px">Corrigir funcionários duplicados</h3>
             <p class="section-sub">A importação criou usuários com o nome curto da planilha (Máyra, Marco Túlio, Leandrinho). Isso liga todo o histórico importado às contas reais que você já cadastrou, e remove as duplicatas.</p>
             <div id="corrigir-status" class="row__meta" style="margin-bottom:10px"></div>
@@ -86,10 +98,26 @@ async function renderAdminMais(cont) {
       <div class="wip">
         ${ICONS.wip}
         <b>Mais ferramentas a caminho</b>
-        <div class="empty__sub">Alertas automáticos, quadro de treinamento e exportação de dados continuam chegando nos próximos passos.</div>
+        <div class="empty__sub">Alertas automáticos e exportação de dados continuam chegando nos próximos passos.</div>
       </div>
     </div>
   `;
+
+  if (gruposDuplicados.length > 0) {
+    document.getElementById('btn-mesclar-duplicados').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-mesclar-duplicados');
+      const statusEl = document.getElementById('mesclar-status');
+      btn.disabled = true;
+      try {
+        const resultado = await MesclarDuplicados.executar((msg) => (statusEl.textContent = msg));
+        statusEl.textContent = `Pronto! ${resultado.mesclados} conta(s) duplicada(s) mesclada(s).`;
+        setTimeout(() => renderAdmin(document.getElementById('view')), 1200);
+      } catch (e) {
+        statusEl.textContent = 'Erro ao mesclar: ' + e.message;
+        btn.disabled = false;
+      }
+    });
+  }
 
   if (precisaCorrigir) {
     document.getElementById('btn-corrigir-funcionarios').addEventListener('click', async () => {
@@ -159,7 +187,7 @@ async function renderAdminUsuarios(cont, view) {
             </div>
             <div class="row__main">
               <div class="row__title">${escapeHtml(u.nome)}</div>
-              <div class="row__meta">@${escapeHtml(u.login)} · ${u.tipo === 'admin' ? 'Administrador' : 'Funcionário'}</div>
+              <div class="row__meta">@${escapeHtml(u.login)} · ${Const.rotuloTipoUsuario(u.tipo)}</div>
             </div>
           </div>
           <div style="display:flex; gap:6px; flex:0 0 auto">
@@ -239,6 +267,8 @@ async function renderFormUsuario(cont, view) {
         <select id="f-tipo-u">
           <option value="funcionario" ${fv.tipo === 'funcionario' ? 'selected' : ''}>Funcionário</option>
           <option value="admin" ${fv.tipo === 'admin' ? 'selected' : ''}>Administrador</option>
+          <option value="pcp" ${fv.tipo === 'pcp' ? 'selected' : ''}>PCP (só vê serviços/corte concluídos + MKT)</option>
+          <option value="mkt" ${fv.tipo === 'mkt' ? 'selected' : ''}>MKT (só vê a aba MKT)</option>
         </select>
       </div>
 

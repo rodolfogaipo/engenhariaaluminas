@@ -280,3 +280,109 @@ const CorrigirFuncionarios = {
 };
 
 window.CorrigirFuncionarios = CorrigirFuncionarios;
+
+/* =========================================================
+   Mesclagem genérica de usuários duplicados — cobre qualquer nome
+   que apareça repetido em "usuarios" (ex: duas contas "Administrador"
+   criadas quase ao mesmo tempo em dois aparelhos diferentes antes da
+   sincronização acontecer). A conta mais antiga (criadoEm menor) é a
+   que fica; o histórico das outras é religado a ela, e as duplicatas
+   são apagadas.
+   ========================================================= */
+
+const MesclarDuplicados = {
+  async detectar() {
+    const usuarios = await DB.getAll('usuarios');
+    const porNome = {};
+    usuarios.forEach((u) => {
+      (porNome[u.nome] = porNome[u.nome] || []).push(u);
+    });
+    return Object.values(porNome).filter((grupo) => grupo.length > 1);
+  },
+
+  async executar(onProgresso) {
+    const grupos = await this.detectar();
+    if (grupos.length === 0) {
+      onProgresso?.('Nenhuma duplicata encontrada.');
+      return { mesclados: 0 };
+    }
+
+    const [servicos, planoCorte, ferias, avisos] = await Promise.all([
+      DB.getAll('servicos'),
+      DB.getAll('plano_corte'),
+      DB.getAll('ferias'),
+      DB.getAll('avisos'),
+    ]);
+
+    const servicosParaAtualizar = [];
+    const corteParaAtualizar = [];
+    const feriasParaAtualizar = [];
+    const avisosParaAtualizar = [];
+    const idsParaExcluir = [];
+
+    for (const grupo of grupos) {
+      grupo.sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0));
+      const principal = grupo[0];
+      const duplicatas = grupo.slice(1);
+      onProgresso?.(`Mesclando ${duplicatas.length} conta(s) duplicada(s) de "${principal.nome}"…`);
+
+      for (const dup of duplicatas) {
+        servicos.forEach((s) => {
+          if (s.funcionarioId === dup.id) {
+            s.funcionarioId = principal.id;
+            s.funcionarioNome = principal.nome;
+            servicosParaAtualizar.push(s);
+          }
+        });
+        planoCorte.forEach((p) => {
+          let mudou = false;
+          if (p.funcionarioCNPId === dup.id) {
+            p.funcionarioCNPId = principal.id;
+            p.funcionarioCNPNome = principal.nome;
+            mudou = true;
+          }
+          if (p.funcionarioCorteId === dup.id) {
+            p.funcionarioCorteId = principal.id;
+            p.funcionarioCorteNome = principal.nome;
+            mudou = true;
+          }
+          if (mudou) corteParaAtualizar.push(p);
+        });
+        ferias.forEach((f) => {
+          if (f.funcionarioId === dup.id) {
+            f.funcionarioId = principal.id;
+            f.funcionarioNome = principal.nome;
+            feriasParaAtualizar.push(f);
+          }
+        });
+        avisos.forEach((a) => {
+          if (!a.vistoPor) return;
+          let mudou = false;
+          a.vistoPor.forEach((v) => {
+            if (v.userId === dup.id) {
+              v.userId = principal.id;
+              v.nome = principal.nome;
+              mudou = true;
+            }
+          });
+          if (mudou) avisosParaAtualizar.push(a);
+        });
+        idsParaExcluir.push(dup.id);
+      }
+    }
+
+    onProgresso?.('Gravando correções…');
+    if (servicosParaAtualizar.length) await DB.putMany('servicos', servicosParaAtualizar);
+    if (corteParaAtualizar.length) await DB.putMany('plano_corte', corteParaAtualizar);
+    if (feriasParaAtualizar.length) await DB.putMany('ferias', feriasParaAtualizar);
+    if (avisosParaAtualizar.length) await DB.putMany('avisos', avisosParaAtualizar);
+    for (const id of idsParaExcluir) {
+      await DB.delete('usuarios', id);
+    }
+
+    onProgresso?.('Concluído!');
+    return { mesclados: idsParaExcluir.length };
+  },
+};
+
+window.MesclarDuplicados = MesclarDuplicados;

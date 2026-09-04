@@ -26,8 +26,16 @@ function inputDateParaTimestamp(dateStr) {
   return new Date(y, m - 1, d).getTime();
 }
 
+function rotuloTipoUsuario(tipo) {
+  if (tipo === 'admin') return 'Administrador';
+  if (tipo === 'pcp') return 'PCP';
+  if (tipo === 'mkt') return 'MKT';
+  return 'Funcionário';
+}
+
 window.Const = {
   formatarData,
   formatarDataHora,
   inputDateParaTimestamp,
+  rotuloTipoUsuario,
 };

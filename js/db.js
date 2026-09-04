@@ -158,7 +158,9 @@ async function seedIfEmpty() {
 
   const senhaHash = await sha256('admin123');
   await DB.put('usuarios', {
-    id: uid(),
+    id: 'seed-admin-principal', // fixo de propósito: evita duas contas Admin
+    // se dois aparelhos "semearem" ao mesmo tempo, os dois escrevem
+    // no MESMO documento em vez de criar dois diferentes
     nome: 'Administrador',
     login: 'admin',
     senhaHash,

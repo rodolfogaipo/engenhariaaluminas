@@ -13,6 +13,7 @@ const ICONS = {
   avisos: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
   treino: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>',
   ferias: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 22h20"/><path d="M12 22V12"/><path d="M12 12c0-5 3-9 8-9 0 5-3 9-8 9Z"/><path d="M12 15c0-3.5-2.5-6.5-6-7 0 3.5 2.5 6.5 6 7Z"/></svg>',
+  mkt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="1"/><path d="M7 7V5M7 19v-2M12 7V5M12 19v-2M17 7V5M17 19v-2"/></svg>',
   admin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.36.4.66.73.85.3.18.66.27 1.02.24H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>',
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
   wip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z"/></svg>',
@@ -27,7 +28,19 @@ const TABS_BASE = [
   { id: 'treino', label: 'Treino', icon: ICONS.treino },
 ];
 
+const TABS_PCP = [
+  { id: 'servicos', label: 'Serviços', icon: ICONS.servicos },
+  { id: 'corte', label: 'Corte', icon: ICONS.corte },
+  { id: 'mkt', label: 'MKT', icon: ICONS.mkt },
+];
+
+const TABS_MKT = [{ id: 'mkt', label: 'MKT', icon: ICONS.mkt }];
+
 function currentTabs() {
+  const tipo = Auth.current?.tipo;
+  if (tipo === 'pcp') return TABS_PCP;
+  if (tipo === 'mkt') return TABS_MKT;
+
   const tabs = [...TABS_BASE];
   if (Auth.isAdmin()) {
     tabs.push({ id: 'admin', label: 'Admin', icon: ICONS.admin });
@@ -85,6 +98,8 @@ function renderLogin(root, errorMsg) {
 
 function renderShell(root) {
   const user = Auth.current;
+  if (user.tipo === 'pcp' && activeTab === 'dashboard') activeTab = 'servicos';
+  if (user.tipo === 'mkt') activeTab = 'mkt';
   root.innerHTML = `
     <div id="app-shell">
       <header class="topbar">
@@ -92,7 +107,7 @@ function renderShell(root) {
         <div class="topbar__title">Engenharia Aluminas</div>
         <div class="topbar__user">
           <b>${escapeHtml(user.nome)}</b>
-          ${user.tipo === 'admin' ? 'Administrador' : 'Funcionário'}
+          ${Const.rotuloTipoUsuario(user.tipo)}
         </div>
         <button class="topbar__icon-btn" id="btn-logout" title="Sair" aria-label="Sair">${ICONS.logout}</button>
       </header>
@@ -157,7 +172,8 @@ async function renderView(tab) {
   if (tab === 'corte') return renderCorte(view);
   if (tab === 'avisos') return renderAvisos(view);
   if (tab === 'ferias') return renderFerias(view);
-  if (tab === 'treino') return renderWip(view, 'Treinamento', 'Padrões de desenho e tutoriais de ferramentas (fotos e vídeos) vão aparecer aqui.');
+  if (tab === 'mkt') return renderMkt(view);
+  if (tab === 'treino') return renderTreino(view);
 }
 
 function renderWip(view, title, sub) {
