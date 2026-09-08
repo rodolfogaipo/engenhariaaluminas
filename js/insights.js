@@ -49,7 +49,8 @@ const Insights = {
     }
 
     // aproveitamento caindo, por categoria
-    const categorias = await Categorias.listarComAproveitamento();
+    const todasCategorias = await Categorias.listar();
+    const categorias = todasCategorias.filter((c) => c.temPorcentagem);
     const agora = Date.now();
     for (const cat of categorias) {
       const indiceAtual = await Metrics.indiceSemana(agora);

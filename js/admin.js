@@ -55,8 +55,8 @@ async function renderAdminMais(cont) {
   const flag = jaImportado ? await DB.get('config', 'planilha_importada_em') : null;
   const precisaCorrigir = await CorrigirFuncionarios.precisaCorrigir();
   const gruposDuplicados = await MesclarDuplicados.detectar();
-  const pendencias = await contarPendencias();
-  const insights = await Insights.gerar();
+  const pendencias = await contarPendencias().catch(() => ({ total: 0, servicos: 0, conclusoes: 0, planoCorte: 0, mkt: 0 }));
+  const insights = await Insights.gerar().catch(() => []);
 
   cont.innerHTML = `
     <div class="card">
