@@ -10,6 +10,8 @@ const ServicosView = {
   subView: 'lista',       // 'lista' | 'form'
   filtroTexto: '',
   formState: null,        // estado do formulário em edição
+  modoSelecao: false,     // seleção múltipla p/ excluir vários de uma vez
+  selecionados: new Set(),
 };
 
 async function renderServicos(view) {
@@ -27,6 +29,7 @@ async function renderServicos(view) {
 async function renderServicosLista(view) {
   const user = Auth.current;
   const somenteLeitura = user.tipo === 'pcp';
+  const ehAdmin = user.tipo === 'admin';
 
   view.innerHTML = `
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap">
@@ -40,12 +43,21 @@ async function renderServicosLista(view) {
             : 'Disponíveis, seus em andamento, e o histórico concluído'
         }</p>
       </div>
-      ${somenteLeitura ? '' : '<button class="btn btn--primary" id="btn-novo-servico">+ Novo Serviço</button>'}
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        ${
+          ehAdmin
+            ? `<button class="btn btn--ghost" id="btn-toggle-selecao">${ServicosView.modoSelecao ? 'Cancelar seleção' : 'Selecionar'}</button>`
+            : ''
+        }
+        ${somenteLeitura ? '' : '<button class="btn btn--primary" id="btn-novo-servico">+ Novo Serviço</button>'}
+      </div>
     </div>
 
     <div class="field" style="margin-bottom:20px">
       <input id="busca-servico" placeholder="Buscar por nome, tipo ou funcionário…" value="${escapeHtml(ServicosView.filtroTexto)}" />
     </div>
+
+    <div id="barra-selecao"></div>
 
     <div id="lista-servicos"></div>
   `;
@@ -58,13 +70,51 @@ async function renderServicosLista(view) {
     });
   }
 
+  if (ehAdmin) {
+    document.getElementById('btn-toggle-selecao').addEventListener('click', () => {
+      ServicosView.modoSelecao = !ServicosView.modoSelecao;
+      ServicosView.selecionados.clear();
+      renderServicosLista(view);
+    });
+  }
+
   const buscaInput = document.getElementById('busca-servico');
   buscaInput.addEventListener('input', () => {
     ServicosView.filtroTexto = buscaInput.value;
     atualizarListaServicos(view);
   });
 
+  renderBarraSelecao(view);
   await atualizarListaServicos(view);
+}
+
+function renderBarraSelecao(view) {
+  const cont = document.getElementById('barra-selecao');
+  if (!cont) return;
+  const n = ServicosView.selecionados.size;
+  if (!ServicosView.modoSelecao || n === 0) {
+    cont.innerHTML = '';
+    return;
+  }
+  cont.innerHTML = `
+    <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; margin-bottom:14px; background:var(--paper-dim)">
+      <b>${n} selecionado${n > 1 ? 's' : ''}</b>
+      <button class="btn btn--danger" id="btn-excluir-selecionados" style="padding:8px 14px">Excluir selecionados</button>
+    </div>
+  `;
+  document.getElementById('btn-excluir-selecionados').addEventListener('click', async () => {
+    if (!confirm(`Excluir ${n} serviço${n > 1 ? 's' : ''} selecionado${n > 1 ? 's' : ''}? Essa ação não pode ser desfeita.`)) return;
+    const ids = Array.from(ServicosView.selecionados);
+    for (const id of ids) {
+      const registro = await DB.get('servicos', id);
+      if (!registro) continue;
+      await DB.delete('servicos', id);
+      if (registro.tipo === 'CNP') await excluirPlanoCorteLigado(id);
+    }
+    ServicosView.selecionados.clear();
+    ServicosView.modoSelecao = false;
+    renderServicosLista(view);
+  });
 }
 
 function estadoServico(s) {
@@ -186,9 +236,14 @@ async function atualizarListaServicos(view) {
           const concluidoBadge = s.dataFinal
             ? `<span class="badge badge--brand">Concluído ${Const.formatarData(s.dataFinal)}</span>`
             : '';
+          const checkboxSelecao =
+            ServicosView.modoSelecao
+              ? `<input type="checkbox" class="chk-selecionar" data-id="${s.id}" style="width:20px; height:20px; flex:0 0 auto; margin-top:2px" ${ServicosView.selecionados.has(s.id) ? 'checked' : ''} />`
+              : '';
           return `
-          <div class="row" style="padding:14px 18px">
-            <div class="row__main">
+          <div class="row" style="padding:14px 18px; display:flex; gap:12px; align-items:flex-start">
+            ${checkboxSelecao}
+            <div class="row__main" style="flex:1">
               <div class="row__title">${escapeHtml(s.nome)}</div>
               <div class="row__meta">${escapeHtml(s.tipo)}${acaoLabel} · ${escapeHtml(s.funcionarioNome || 'Disponível')} · ${Const.formatarData(s.criadoEm)}</div>
               ${aguardandoInicioMeta}
@@ -241,6 +296,15 @@ async function atualizarListaServicos(view) {
         .join('')}
     </div>
   `;
+
+  listaEl.querySelectorAll('.chk-selecionar').forEach((chk) => {
+    chk.addEventListener('change', () => {
+      const id = chk.dataset.id;
+      if (chk.checked) ServicosView.selecionados.add(id);
+      else ServicosView.selecionados.delete(id);
+      renderBarraSelecao(view);
+    });
+  });
 
   listaEl.querySelectorAll('[data-comecar]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -484,16 +548,19 @@ async function renderServicoForm(view) {
       }
 
       ${
-        ehAdmin && editando
+        ehAdmin
           ? `<div style="display:flex; gap:12px">
               <div class="field" style="flex:1">
-                <label for="f-data-inicio-adm">Data Início</label>
+                <label for="f-data-inicio-adm">Data Início (opcional)</label>
                 <input id="f-data-inicio-adm" type="date" value="${escapeHtml(st.dataInicioAdmin || '')}" />
               </div>
               <div class="field" style="flex:1">
-                <label for="f-data-fim-adm">Data Final</label>
+                <label for="f-data-fim-adm">Data Final (opcional)</label>
                 <input id="f-data-fim-adm" type="date" value="${escapeHtml(st.dataFinalAdmin || '')}" />
               </div>
+            </div>
+            <div class="row__meta" style="margin-top:-8px; margin-bottom:14px">
+              Preencha a Data Final pra já lançar o serviço como concluído (ex: em nome de um funcionário que fez algo e você está registrando depois). Sem Data Final, o serviço fica "Disponível" ou "Em andamento".
             </div>`
           : ''
       }
@@ -553,12 +620,10 @@ async function renderServicoForm(view) {
   if (ehAdmin) {
     const funcSelect = document.getElementById('f-func-resp');
     if (funcSelect) funcSelect.addEventListener('change', (ev) => (st.funcionarioId = ev.target.value || null));
-    if (editando) {
-      const inicioEl = document.getElementById('f-data-inicio-adm');
-      const fimEl = document.getElementById('f-data-fim-adm');
-      if (inicioEl) inicioEl.addEventListener('input', (ev) => (st.dataInicioAdmin = ev.target.value));
-      if (fimEl) fimEl.addEventListener('input', (ev) => (st.dataFinalAdmin = ev.target.value));
-    }
+    const inicioEl = document.getElementById('f-data-inicio-adm');
+    const fimEl = document.getElementById('f-data-fim-adm');
+    if (inicioEl) inicioEl.addEventListener('input', (ev) => (st.dataInicioAdmin = ev.target.value));
+    if (fimEl) fimEl.addEventListener('input', (ev) => (st.dataFinalAdmin = ev.target.value));
 
     const anexosInput = document.getElementById('f-anexos');
     if (anexosInput) {
@@ -801,11 +866,14 @@ async function salvarServico(view) {
     if (user.tipo === 'admin') registro.anexos = st.anexos;
 
     if (user.tipo === 'admin') {
-      // reatribuição de funcionário responsável
+      // reatribuição de funcionário responsável — recarrega na hora de
+      // salvar, pra nunca depender de um cache que possa estar
+      // desatualizado (evita salvar o ID sem o nome correspondente)
+      const usuariosAgora = await DB.getAll('usuarios');
       if (st.funcionarioId) {
-        const func = funcionariosCache.find((u) => u.id === st.funcionarioId);
+        const func = usuariosAgora.find((u) => u.id === st.funcionarioId);
         registro.funcionarioId = st.funcionarioId;
-        registro.funcionarioNome = func ? func.nome : registro.funcionarioNome;
+        registro.funcionarioNome = func ? func.nome : null;
       } else {
         registro.funcionarioId = null;
         registro.funcionarioNome = null;
@@ -839,17 +907,33 @@ async function salvarServico(view) {
   let funcionarioIdFinal = user.id;
   let funcionarioNomeFinal = user.nome;
   let iniciadoEmFinal = Date.now(); // funcionário lançando o próprio serviço já está "fazendo"
+  let dataFinalFinal = null;
+  let concluidoInformadoEmFinal = null;
+  let validadoPeloAdminFinal = false;
 
   if (user.tipo === 'admin') {
+    // recarrega na hora de salvar, pra nunca depender de um cache que
+    // possa estar desatualizado — é o funcionário selecionado ou nada
+    const usuariosAgora = await DB.getAll('usuarios');
+
     if (st.funcionarioId) {
-      const func = funcionariosCache.find((u) => u.id === st.funcionarioId);
+      const func = usuariosAgora.find((u) => u.id === st.funcionarioId);
       funcionarioIdFinal = st.funcionarioId;
       funcionarioNomeFinal = func ? func.nome : null;
-      iniciadoEmFinal = null; // atribuído, mas só conta quando a pessoa clicar em "Começar"
     } else {
       funcionarioIdFinal = null;
       funcionarioNomeFinal = null;
-      iniciadoEmFinal = null; // fica "Disponível" pra qualquer um
+    }
+
+    // se o Admin já preencheu Data Início/Final na hora de lançar, o
+    // serviço nasce direto como em andamento ou já concluído (ex:
+    // lançamento retroativo em nome de um funcionário)
+    iniciadoEmFinal = st.dataInicioAdmin ? Const.inputDateParaTimestamp(st.dataInicioAdmin) : null;
+    dataFinalFinal = st.dataFinalAdmin ? Const.inputDateParaTimestamp(st.dataFinalAdmin) : null;
+    if (dataFinalFinal) {
+      concluidoInformadoEmFinal = dataFinalFinal;
+      validadoPeloAdminFinal = true;
+      if (!iniciadoEmFinal) iniciadoEmFinal = dataFinalFinal; // concluído sem início marcado = início na mesma data
     }
   }
 
@@ -859,7 +943,7 @@ async function salvarServico(view) {
     numeroPedido: st.numeroPedido || '',
     nome: nomeFinal,
     dataProgramada: st.dataProgramada ? Const.inputDateParaTimestamp(st.dataProgramada) : null,
-    dataFinal: null,
+    dataFinal: dataFinalFinal,
     observacoes: st.observacoes || '',
     percentualAproveitamento: percentual,
     catalogoItemId,
@@ -867,6 +951,10 @@ async function salvarServico(view) {
     funcionarioId: funcionarioIdFinal,
     funcionarioNome: funcionarioNomeFinal,
     iniciadoEm: iniciadoEmFinal,
+    concluidoInformadoEm: concluidoInformadoEmFinal,
+    validadoPeloAdmin: validadoPeloAdminFinal,
+    erros: 0,
+    errosNovos: 0,
     anexos: user.tipo === 'admin' ? st.anexos : [],
     aprovado: user.tipo === 'admin' ? 'aprovado' : 'pendente',
     dataAprovacao: user.tipo === 'admin' ? Date.now() : null,
@@ -934,6 +1022,17 @@ async function renderConcluirServico(view) {
   const st = ServicosView.formState;
   const registro = await DB.get('servicos', st.id);
   const validando = !!(registro && registro.concluidoInformadoEm);
+  const ehAdmin = Auth.isAdmin();
+
+  if (ehAdmin && st.funcionarioId === undefined) {
+    st.funcionarioId = registro ? registro.funcionarioId || null : null;
+  }
+  if (ehAdmin && st.dataConclusao === undefined) {
+    st.dataConclusao = dataParaInputDate(registro?.concluidoInformadoEm || Date.now());
+  }
+  if (ehAdmin) {
+    funcionariosCache = (await DB.getAll('usuarios')).filter((u) => u.tipo !== 'admin');
+  }
 
   view.innerHTML = `
     <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px">
@@ -952,6 +1051,22 @@ async function renderConcluirServico(view) {
       }
 
       ${st.erro ? `<div class="auth__error show" style="text-align:left; margin-bottom:14px">${escapeHtml(st.erro)}</div>` : ''}
+
+      ${
+        ehAdmin
+          ? `<div class="field">
+              <label for="f-concluir-func">Funcionário responsável</label>
+              <select id="f-concluir-func">
+                <option value="">Selecione quem fez…</option>
+                ${funcionariosCache.map((u) => `<option value="${u.id}" ${u.id === st.funcionarioId ? 'selected' : ''}>${escapeHtml(u.nome)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field">
+              <label for="f-concluir-data">Data de conclusão</label>
+              <input id="f-concluir-data" type="date" value="${escapeHtml(st.dataConclusao || '')}" />
+            </div>`
+          : ''
+      }
 
       <div class="field">
         <label for="f-erros">Erros</label>
@@ -975,6 +1090,10 @@ async function renderConcluirServico(view) {
   document.getElementById('btn-cancelar-concluir').addEventListener('click', voltarParaLista);
   document.getElementById('f-erros').addEventListener('input', (ev) => (st.erros = ev.target.value));
   document.getElementById('f-erros-novos').addEventListener('input', (ev) => (st.errosNovos = ev.target.value));
+  if (ehAdmin) {
+    document.getElementById('f-concluir-func').addEventListener('change', (ev) => (st.funcionarioId = ev.target.value || null));
+    document.getElementById('f-concluir-data').addEventListener('input', (ev) => (st.dataConclusao = ev.target.value));
+  }
 
   document.getElementById('btn-confirmar-concluir').addEventListener('click', async () => {
     const erros = parseInt(st.erros, 10);
@@ -983,15 +1102,33 @@ async function renderConcluirServico(view) {
       st.erro = 'Erros e Erros Novos devem ser números 0 ou maiores.';
       return renderConcluirServico(view);
     }
+    if (ehAdmin && !st.funcionarioId) {
+      st.erro = 'Selecione quem fez o serviço antes de concluir.';
+      return renderConcluirServico(view);
+    }
     const reg = await DB.get('servicos', st.id);
     if (!reg) return voltarParaLista();
-    reg.dataFinal = reg.concluidoInformadoEm || Date.now();
-    if (!reg.concluidoInformadoEm) reg.concluidoInformadoEm = reg.dataFinal;
+
+    if (ehAdmin) {
+      const usuariosAgora = await DB.getAll('usuarios');
+      const func = usuariosAgora.find((u) => u.id === st.funcionarioId);
+      reg.funcionarioId = st.funcionarioId;
+      reg.funcionarioNome = func ? func.nome : reg.funcionarioNome;
+      const dataConcluida = st.dataConclusao ? Const.inputDateParaTimestamp(st.dataConclusao) : Date.now();
+      reg.dataFinal = dataConcluida;
+      reg.concluidoInformadoEm = reg.concluidoInformadoEm || dataConcluida;
+      if (!reg.iniciadoEm) reg.iniciadoEm = dataConcluida;
+    } else {
+      reg.dataFinal = reg.concluidoInformadoEm || Date.now();
+      if (!reg.concluidoInformadoEm) reg.concluidoInformadoEm = reg.dataFinal;
+    }
+
     reg.erros = erros;
     reg.errosNovos = errosNovos;
     reg.validadoPeloAdmin = true;
     reg.validadoEm = Date.now();
     await DB.put('servicos', reg);
+    if (reg.tipo === 'CNP') await sincronizarPlanoCorteComCNP(reg);
     voltarParaLista();
   });
 }
