@@ -665,6 +665,22 @@ async function renderServicoForm(view) {
   document.getElementById('btn-salvar-servico').addEventListener('click', () => salvarServicoComTratamentoDeErro(view));
 }
 
+/* Nunca deixa a tela travada esperando pra sempre — se o Firestore
+   estiver sem responder (ex: cota diária esgotada, aí ele fica
+   tentando de novo sem parar em vez de falhar na hora), o botão
+   libera sozinho depois de 12s em vez de ficar preso em "Salvando…" */
+function comTimeout(promise, ms = 12000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`Demorou mais de ${Math.round(ms / 1000)}s sem resposta do servidor. Provavelmente a cota diária gratuita do Firestore está esgotada, ou a conexão caiu. Tente de novo em alguns minutos.`)),
+        ms
+      )
+    ),
+  ]);
+}
+
 async function salvarServicoComTratamentoDeErro(view) {
   const st = ServicosView.formState;
   const btn = document.getElementById('btn-salvar-servico');
@@ -680,14 +696,15 @@ async function salvarServicoComTratamentoDeErro(view) {
   // dando a impressão de que "travou" mesmo o serviço já tendo sido lançado
   window.operacaoEmAndamento = true;
   try {
-    await salvarServico(view);
+    await comTimeout(salvarServico(view));
   } catch (e) {
     console.error('Erro ao salvar serviço:', e);
     st.erro = 'Não consegui salvar: ' + (e && e.message ? e.message : 'erro desconhecido. Confira sua conexão e tente de novo.');
-    await renderServicoForm(view);
-  } finally {
     window.operacaoEmAndamento = false;
+    await renderServicoForm(view);
+    return;
   }
+  window.operacaoEmAndamento = false;
 }
 
 function voltarParaLista() {
@@ -1141,37 +1158,42 @@ async function renderConcluirServico(view) {
     btnConfirmar.textContent = 'Salvando…';
     window.operacaoEmAndamento = true;
     try {
-      const reg = await DB.get('servicos', st.id);
-      if (!reg) return voltarParaLista();
+      await comTimeout(
+        (async () => {
+          const reg = await DB.get('servicos', st.id);
+          if (!reg) return voltarParaLista();
 
-      if (ehAdmin) {
-        const usuariosAgora = await DB.getAll('usuarios');
-        const func = usuariosAgora.find((u) => u.id === st.funcionarioId);
-        reg.funcionarioId = st.funcionarioId;
-        reg.funcionarioNome = func ? func.nome : reg.funcionarioNome;
-        const dataConcluida = st.dataConclusao ? Const.inputDateParaTimestamp(st.dataConclusao) : Date.now();
-        reg.dataFinal = dataConcluida;
-        reg.concluidoInformadoEm = reg.concluidoInformadoEm || dataConcluida;
-        if (!reg.iniciadoEm) reg.iniciadoEm = dataConcluida;
-      } else {
-        reg.dataFinal = reg.concluidoInformadoEm || Date.now();
-        if (!reg.concluidoInformadoEm) reg.concluidoInformadoEm = reg.dataFinal;
-      }
+          if (ehAdmin) {
+            const usuariosAgora = await DB.getAll('usuarios');
+            const func = usuariosAgora.find((u) => u.id === st.funcionarioId);
+            reg.funcionarioId = st.funcionarioId;
+            reg.funcionarioNome = func ? func.nome : reg.funcionarioNome;
+            const dataConcluida = st.dataConclusao ? Const.inputDateParaTimestamp(st.dataConclusao) : Date.now();
+            reg.dataFinal = dataConcluida;
+            reg.concluidoInformadoEm = reg.concluidoInformadoEm || dataConcluida;
+            if (!reg.iniciadoEm) reg.iniciadoEm = dataConcluida;
+          } else {
+            reg.dataFinal = reg.concluidoInformadoEm || Date.now();
+            if (!reg.concluidoInformadoEm) reg.concluidoInformadoEm = reg.dataFinal;
+          }
 
-      reg.erros = erros;
-      reg.errosNovos = errosNovos;
-      reg.validadoPeloAdmin = true;
-      reg.validadoEm = Date.now();
-      await DB.put('servicos', reg);
-      if (reg.tipo === 'CNP') await sincronizarPlanoCorteComCNP(reg);
-      voltarParaLista();
+          reg.erros = erros;
+          reg.errosNovos = errosNovos;
+          reg.validadoPeloAdmin = true;
+          reg.validadoEm = Date.now();
+          await DB.put('servicos', reg);
+          if (reg.tipo === 'CNP') await sincronizarPlanoCorteComCNP(reg);
+          voltarParaLista();
+        })()
+      );
     } catch (e) {
       console.error('Erro ao concluir serviço:', e);
       st.erro = 'Não consegui salvar: ' + (e && e.message ? e.message : 'erro desconhecido. Confira sua conexão e tente de novo.');
-      await renderConcluirServico(view);
-    } finally {
       window.operacaoEmAndamento = false;
+      await renderConcluirServico(view);
+      return;
     }
+    window.operacaoEmAndamento = false;
   });
 }
 
