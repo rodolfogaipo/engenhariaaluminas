@@ -389,7 +389,9 @@ const RemoverDuplicados = {
   // chave de "conteúdo idêntico" — ignora o id (aleatório) e usa tudo
   // mais. Reimportações da mesma planilha geram cópias com todos os
   // campos idênticos, então isso pega exatamente esses casos, sem
-  // risco de apagar dois serviços diferentes que só coincidem no nome.
+  // risco de apagar dois serviços diferentes que só coincidem no nome
+  // (ex: vários cortes "C1" no mesmo dia pra mesma pessoa são peças
+  // diferentes de verdade, não duplicatas — por isso a chave é rígida).
   chaveServico(s) {
     return [
       s.tipo, s.numeroPedido, s.nome, s.dataProgramada, s.dataFinal,
@@ -406,7 +408,13 @@ const RemoverDuplicados = {
   },
 
   async detectar() {
-    const [servicos, planoCorte] = await Promise.all([DB.getAll('servicos'), DB.getAll('plano_corte')]);
+    // busca direto do servidor, ignorando qualquer cache local — pra
+    // sempre refletir o que está realmente salvo, não o que esse
+    // aparelho específico guardou
+    const [servicos, planoCorte] = await Promise.all([
+      DB.getAllFromServer('servicos'),
+      DB.getAllFromServer('plano_corte'),
+    ]);
 
     const gruposServicos = {};
     servicos.forEach((s) => {

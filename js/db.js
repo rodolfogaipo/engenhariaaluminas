@@ -18,7 +18,9 @@
       em tempo real entre aparelhos funcionar.
    ========================================================= */
 
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js';
+import {
+  initializeApp,
+} from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js';
 import {
   initializeFirestore,
   persistentLocalCache,
@@ -29,6 +31,7 @@ import {
   deleteDoc,
   onSnapshot,
   writeBatch,
+  getDocsFromServer,
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -118,6 +121,16 @@ const DB = {
     const c = garantirColecao(storeName);
     await c.pronto;
     return Array.from(c.mapa.values());
+  },
+
+  // Ignora QUALQUER cache local (do navegador ou do app instalado) e
+  // busca direto do servidor. Mais lento, mas é a única forma de ter
+  // certeza absoluta do que realmente existe salvo — usado nas
+  // ferramentas de diagnóstico do Admin, pra nunca mais depender do
+  // que um aparelho específico guardou localmente.
+  async getAllFromServer(storeName) {
+    const snapshot = await getDocsFromServer(collection(firestore, storeName));
+    return snapshot.docs.map((d) => d.data());
   },
 
   async delete(storeName, key) {
