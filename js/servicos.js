@@ -662,7 +662,32 @@ async function renderServicoForm(view) {
 
   renderBlocoNome(view, ehCadastro);
 
-  document.getElementById('btn-salvar-servico').addEventListener('click', () => salvarServico(view));
+  document.getElementById('btn-salvar-servico').addEventListener('click', () => salvarServicoComTratamentoDeErro(view));
+}
+
+async function salvarServicoComTratamentoDeErro(view) {
+  const st = ServicosView.formState;
+  const btn = document.getElementById('btn-salvar-servico');
+  const btnCancelar = document.getElementById('btn-cancelar-servico');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Salvando…';
+  }
+  if (btnCancelar) btnCancelar.disabled = true;
+  // segura o auto-refresh em tempo real enquanto salva — sem isso, a
+  // sincronização podia redesenhar o formulário no meio do caminho
+  // (com os campos ainda preenchidos) antes da volta pra lista acontecer,
+  // dando a impressão de que "travou" mesmo o serviço já tendo sido lançado
+  window.operacaoEmAndamento = true;
+  try {
+    await salvarServico(view);
+  } catch (e) {
+    console.error('Erro ao salvar serviço:', e);
+    st.erro = 'Não consegui salvar: ' + (e && e.message ? e.message : 'erro desconhecido. Confira sua conexão e tente de novo.');
+    await renderServicoForm(view);
+  } finally {
+    window.operacaoEmAndamento = false;
+  }
 }
 
 function voltarParaLista() {
@@ -1111,30 +1136,42 @@ async function renderConcluirServico(view) {
       st.erro = 'Selecione quem fez o serviço antes de concluir.';
       return renderConcluirServico(view);
     }
-    const reg = await DB.get('servicos', st.id);
-    if (!reg) return voltarParaLista();
+    const btnConfirmar = document.getElementById('btn-confirmar-concluir');
+    btnConfirmar.disabled = true;
+    btnConfirmar.textContent = 'Salvando…';
+    window.operacaoEmAndamento = true;
+    try {
+      const reg = await DB.get('servicos', st.id);
+      if (!reg) return voltarParaLista();
 
-    if (ehAdmin) {
-      const usuariosAgora = await DB.getAll('usuarios');
-      const func = usuariosAgora.find((u) => u.id === st.funcionarioId);
-      reg.funcionarioId = st.funcionarioId;
-      reg.funcionarioNome = func ? func.nome : reg.funcionarioNome;
-      const dataConcluida = st.dataConclusao ? Const.inputDateParaTimestamp(st.dataConclusao) : Date.now();
-      reg.dataFinal = dataConcluida;
-      reg.concluidoInformadoEm = reg.concluidoInformadoEm || dataConcluida;
-      if (!reg.iniciadoEm) reg.iniciadoEm = dataConcluida;
-    } else {
-      reg.dataFinal = reg.concluidoInformadoEm || Date.now();
-      if (!reg.concluidoInformadoEm) reg.concluidoInformadoEm = reg.dataFinal;
+      if (ehAdmin) {
+        const usuariosAgora = await DB.getAll('usuarios');
+        const func = usuariosAgora.find((u) => u.id === st.funcionarioId);
+        reg.funcionarioId = st.funcionarioId;
+        reg.funcionarioNome = func ? func.nome : reg.funcionarioNome;
+        const dataConcluida = st.dataConclusao ? Const.inputDateParaTimestamp(st.dataConclusao) : Date.now();
+        reg.dataFinal = dataConcluida;
+        reg.concluidoInformadoEm = reg.concluidoInformadoEm || dataConcluida;
+        if (!reg.iniciadoEm) reg.iniciadoEm = dataConcluida;
+      } else {
+        reg.dataFinal = reg.concluidoInformadoEm || Date.now();
+        if (!reg.concluidoInformadoEm) reg.concluidoInformadoEm = reg.dataFinal;
+      }
+
+      reg.erros = erros;
+      reg.errosNovos = errosNovos;
+      reg.validadoPeloAdmin = true;
+      reg.validadoEm = Date.now();
+      await DB.put('servicos', reg);
+      if (reg.tipo === 'CNP') await sincronizarPlanoCorteComCNP(reg);
+      voltarParaLista();
+    } catch (e) {
+      console.error('Erro ao concluir serviço:', e);
+      st.erro = 'Não consegui salvar: ' + (e && e.message ? e.message : 'erro desconhecido. Confira sua conexão e tente de novo.');
+      await renderConcluirServico(view);
+    } finally {
+      window.operacaoEmAndamento = false;
     }
-
-    reg.erros = erros;
-    reg.errosNovos = errosNovos;
-    reg.validadoPeloAdmin = true;
-    reg.validadoEm = Date.now();
-    await DB.put('servicos', reg);
-    if (reg.tipo === 'CNP') await sincronizarPlanoCorteComCNP(reg);
-    voltarParaLista();
   });
 }
 

@@ -131,6 +131,7 @@ function renderShell(root) {
   let debounceTimer = null;
   window.aoDadosMudarem = () => {
     if (!Auth.current) return;
+    if (window.operacaoEmAndamento) return; // segura o auto-refresh enquanto um salvamento está em curso (evita reabrir um formulário que já foi enviado)
     const el = document.activeElement;
     const emCampoDeForm = el && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
     if (emCampoDeForm) return; // não atualiza enquanto a pessoa está preenchendo algo
