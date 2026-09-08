@@ -562,6 +562,8 @@ async function renderDashboardIndividual(view, userId, nomeExibicao, subtitulo, 
   }
 
   cont.innerHTML = `
+    ${!atual.emFerias ? renderCardMetaSemanal(atual) : ''}
+
     <div class="stat-grid">
       <div class="card"><div class="stat"><div class="stat__value">${atual.emFerias ? '🏖️' : atual.projetos}</div><div class="stat__label">Projetos na semana</div></div></div>
       <div class="card"><div class="stat"><div class="stat__value">${atual.emFerias ? '—' : atual.nota.toFixed(0)}</div><div class="stat__label">Nota</div></div></div>
@@ -591,6 +593,46 @@ async function renderDashboardIndividual(view, userId, nomeExibicao, subtitulo, 
     value: s.emFerias || s.pctMeta == null ? 0 : Math.round(s.pctMeta * 100),
   }));
   document.getElementById('grafico-nota').innerHTML = graficoBarrasSVG(dadosGrafico, 100, '%');
+}
+
+/* Card grande e visual da Meta da Semana — o objetivo é dar um empurrão
+   de motivação ao abrir o app: mostrar de cara "quanto falta" com uma
+   barra de progresso, não só um número perdido no meio de outras
+   estatísticas. Cor muda conforme o progresso: vermelho no começo,
+   âmbar chegando perto, verde ao bater ou passar a meta. */
+function renderCardMetaSemanal(atual) {
+  const meta = atual.meta || 0;
+  const feitos = atual.projetos || 0;
+  const pct = meta > 0 ? Math.min(1, feitos / meta) : 0;
+  const pctExibicao = Math.round((atual.pctMeta || 0) * 100);
+  const faltam = Math.max(0, meta - feitos);
+  const bateu = feitos >= meta;
+
+  const cor = bateu ? 'var(--ok-fg)' : pct >= 0.7 ? 'var(--warn-fg)' : 'var(--brand-600)';
+  const corFundoBarra = bateu ? 'var(--ok-bg)' : pct >= 0.7 ? 'var(--warn-bg)' : 'var(--paper-dim)';
+
+  const mensagem = bateu
+    ? `🎉 Meta batida! Você já fez ${feitos} de ${meta.toFixed(1)} — continue assim!`
+    : faltam <= 1
+    ? `💪 Só falta ${faltam.toFixed(1)} pra bater a meta da semana!`
+    : `Faltam ${faltam.toFixed(1)} projetos pra bater a meta da semana.`;
+
+  return `
+    <div class="card" style="margin-bottom:16px; border-color:${cor}">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:10px">
+        <h3 class="section-title" style="font-size:16px; margin:0">🎯 Meta da Semana</h3>
+        <span style="font-weight:700; font-size:15px; color:${cor}">${pctExibicao}%</span>
+      </div>
+      <div style="height:22px; border-radius:999px; background:${corFundoBarra}; overflow:hidden; position:relative">
+        <div style="height:100%; width:${(pct * 100).toFixed(1)}%; background:${cor}; border-radius:999px; transition:width .3s ease"></div>
+      </div>
+      <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:13px; color:var(--ink-soft)">
+        <span><b style="color:var(--ink); font-size:15px">${feitos}</b> feitos</span>
+        <span>meta: <b style="color:var(--ink)">${meta.toFixed(1)}</b></span>
+      </div>
+      <div style="text-align:center; margin-top:12px; font-weight:600; font-size:14px; color:${cor}">${mensagem}</div>
+    </div>
+  `;
 }
 
 /* Mês/Ano: Nota e Tendência são conceitos semanais, então aqui mostramos

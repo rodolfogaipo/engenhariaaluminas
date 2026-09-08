@@ -254,9 +254,10 @@ async function atualizarListaServicos(view) {
               ? `<input type="checkbox" class="chk-selecionar" data-id="${s.id}" style="width:20px; height:20px; flex:0 0 auto; margin-top:2px" ${ServicosView.selecionados.has(s.id) ? 'checked' : ''} />`
               : '';
           return `
-          <div class="row" style="padding:14px 18px; display:flex; gap:12px; align-items:flex-start">
-            ${checkboxSelecao}
-            <div class="row__main" style="flex:1">
+          <div class="row" style="padding:14px 18px; display:flex; flex-direction:column; gap:10px; align-items:stretch">
+            <div style="display:flex; gap:10px; align-items:flex-start">
+              ${checkboxSelecao}
+              <div class="row__main" style="flex:1; min-width:0">
               <div class="row__title">${escapeHtml(s.nome)}</div>
               <div class="row__meta">${escapeHtml(s.tipo)}${acaoLabel} · ${escapeHtml(s.funcionarioNome || 'Disponível')} · ${Const.formatarData(s.criadoEm)}</div>
               ${aguardandoInicioMeta}
@@ -290,7 +291,8 @@ async function atualizarListaServicos(view) {
                   : ''
               }
             </div>
-            <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end">
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
               ${statusBadge}
               ${disponivelBadge}
               ${emAndamentoBadge}
