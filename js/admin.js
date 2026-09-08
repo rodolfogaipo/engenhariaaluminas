@@ -234,6 +234,12 @@ async function renderAdminUsuarios(cont, view) {
     return renderFormUsuario(cont, view);
   }
 
+  const todosServicos = await DB.getAll('servicos');
+  const contagemPorUsuario = {};
+  todosServicos.forEach((s) => {
+    if (s.funcionarioId) contagemPorUsuario[s.funcionarioId] = (contagemPorUsuario[s.funcionarioId] || 0) + 1;
+  });
+
   cont.innerHTML = `
     <div style="display:flex; justify-content:flex-end; margin-bottom:14px">
       <button class="btn btn--primary" id="btn-novo-usuario">+ Novo Usuário</button>
@@ -250,6 +256,7 @@ async function renderAdminUsuarios(cont, view) {
             <div class="row__main">
               <div class="row__title">${escapeHtml(u.nome)}</div>
               <div class="row__meta">@${escapeHtml(u.login)} · ${Const.rotuloTipoUsuario(u.tipo)}</div>
+              <div class="row__meta">${contagemPorUsuario[u.id] || 0} serviço(s) vinculados · ID: ${escapeHtml(u.id)}</div>
             </div>
           </div>
           <div style="display:flex; gap:6px; flex:0 0 auto">
