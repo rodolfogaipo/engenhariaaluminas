@@ -108,8 +108,6 @@ const Categorias = {
   },
 
   async remover(id) {
-    const c = await DB.get('categorias_servico', id);
-    if (c && c.sistema) throw new Error('Categorias padrão do sistema não podem ser excluídas.');
     await DB.delete('categorias_servico', id);
   },
 };

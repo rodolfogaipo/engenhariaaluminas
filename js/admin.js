@@ -637,7 +637,7 @@ async function renderAdminCategorias(cont, view) {
           <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto">
             <span class="badge ${c.temPorcentagem ? 'badge--brand' : 'badge--idle'}">${c.temPorcentagem ? 'Tem %' : 'Sem %'}</span>
             <button class="btn btn--ghost" data-editar-cat="${c.id}" style="padding:6px 12px; font-size:13px">Editar</button>
-            ${!c.sistema ? `<button class="btn btn--danger" data-excluir-cat="${c.id}" style="padding:6px 12px; font-size:13px">Excluir</button>` : ''}
+            <button class="btn btn--danger" data-excluir-cat="${c.id}" data-sistema-cat="${c.sistema ? '1' : ''}" style="padding:6px 12px; font-size:13px">Excluir</button>
           </div>
         </div>`
         )
@@ -671,7 +671,11 @@ async function renderAdminCategorias(cont, view) {
 
   cont.querySelectorAll('[data-excluir-cat]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Excluir esta categoria? Serviços já lançados com ela continuam existindo, só não vai mais aparecer pra lançar novos.')) return;
+      const ehSistema = btn.dataset.sistemaCat === '1';
+      const aviso = ehSistema
+        ? 'Essa é uma categoria PADRÃO do sistema. Excluir vai tirá-la da lista de opções pra novos lançamentos — serviços já lançados com ela continuam existindo normalmente. Excluir mesmo assim?'
+        : 'Excluir esta categoria? Serviços já lançados com ela continuam existindo, só não vai mais aparecer pra lançar novos.';
+      if (!confirm(aviso)) return;
       try {
         await Categorias.remover(btn.dataset.excluirCat);
         renderAdminCategorias(cont, view);
