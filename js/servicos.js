@@ -165,7 +165,15 @@ async function atualizarListaServicos(view) {
       };
       const diff = prioridadeDe(a) - prioridadeDe(b);
       if (diff !== 0) return diff;
-      return b.criadoEm - a.criadoEm;
+      // desempate: concluídos ordenam pela Data Final de verdade (mais
+      // confiável — vem do mesmo campo mostrado no badge). Os demais
+      // usam a data de criação, mas uma data de criação no futuro
+      // (alguns itens importados da planilha vieram assim, por erro
+      // dos dados antigos) nunca "fura a fila" na frente do que é
+      // realmente recente.
+      const agora = Date.now();
+      const chaveOrdenacao = (s) => (estadoServico(s) === 'concluido' ? s.dataFinal || 0 : Math.min(s.criadoEm || 0, agora));
+      return chaveOrdenacao(b) - chaveOrdenacao(a);
     });
 
   const listaEl = document.getElementById('lista-servicos');
