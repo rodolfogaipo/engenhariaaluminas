@@ -152,14 +152,14 @@ const SeedImport = {
   async remover(onProgresso) {
     onProgresso?.('Removendo serviços importados…');
     const servicos = await DB.getAll('servicos');
-    for (const s of servicos.filter((s) => s.importadoDaPlanilha)) {
-      await DB.delete('servicos', s.id);
-    }
+    const idsServicos = servicos.filter((s) => s.importadoDaPlanilha).map((s) => s.id);
+    if (idsServicos.length > 0) await DB.deleteMany('servicos', idsServicos);
+
     onProgresso?.('Removendo Plano de Corte importado…');
     const planoCorte = await DB.getAll('plano_corte');
-    for (const p of planoCorte.filter((p) => p.importadoDaPlanilha)) {
-      await DB.delete('plano_corte', p.id);
-    }
+    const idsPlanoCorte = planoCorte.filter((p) => p.importadoDaPlanilha).map((p) => p.id);
+    if (idsPlanoCorte.length > 0) await DB.deleteMany('plano_corte', idsPlanoCorte);
+
     await DB.delete('config', 'planilha_importada_em');
     onProgresso?.('Removido.');
   },
