@@ -105,12 +105,17 @@ function renderBarraSelecao(view) {
   document.getElementById('btn-excluir-selecionados').addEventListener('click', async () => {
     if (!confirm(`Excluir ${n} serviço${n > 1 ? 's' : ''} selecionado${n > 1 ? 's' : ''}? Essa ação não pode ser desfeita.`)) return;
     const ids = Array.from(ServicosView.selecionados);
+    const idsPlanoCorte = [];
     for (const id of ids) {
       const registro = await DB.get('servicos', id);
-      if (!registro) continue;
-      await DB.delete('servicos', id);
-      if (registro.tipo === 'CNP') await excluirPlanoCorteLigado(id);
+      if (registro && registro.tipo === 'CNP') {
+        const todosCorte = await DB.getAll('plano_corte');
+        const pc = todosCorte.find((p) => p.cnpServicoId === id);
+        if (pc) idsPlanoCorte.push(pc.id);
+      }
     }
+    await DB.deleteMany('servicos', ids);
+    if (idsPlanoCorte.length > 0) await DB.deleteMany('plano_corte', idsPlanoCorte);
     ServicosView.selecionados.clear();
     ServicosView.modoSelecao = false;
     renderServicosLista(view);

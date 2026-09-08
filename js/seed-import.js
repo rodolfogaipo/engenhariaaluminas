@@ -429,30 +429,29 @@ const RemoverDuplicados = {
 
   async executar(onProgresso) {
     const { duplicadosServicos, duplicadosCorte } = await this.detectar();
-    let removidos = 0;
 
-    onProgresso?.('Removendo serviços duplicados…');
+    const idsServicos = [];
     for (const grupo of duplicadosServicos) {
       grupo.sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0));
-      const extras = grupo.slice(1); // mantém o primeiro, remove o resto
-      for (const dup of extras) {
-        await DB.delete('servicos', dup.id);
-        removidos++;
-      }
+      grupo.slice(1).forEach((dup) => idsServicos.push(dup.id)); // mantém o primeiro, marca o resto
     }
-
-    onProgresso?.('Removendo Plano de Corte duplicado…');
+    const idsCorte = [];
     for (const grupo of duplicadosCorte) {
       grupo.sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0));
-      const extras = grupo.slice(1);
-      for (const dup of extras) {
-        await DB.delete('plano_corte', dup.id);
-        removidos++;
-      }
+      grupo.slice(1).forEach((dup) => idsCorte.push(dup.id));
+    }
+
+    if (idsServicos.length > 0) {
+      onProgresso?.(`Removendo ${idsServicos.length} serviço(s) duplicado(s) em lote…`);
+      await DB.deleteMany('servicos', idsServicos);
+    }
+    if (idsCorte.length > 0) {
+      onProgresso?.(`Removendo ${idsCorte.length} registro(s) de Plano de Corte duplicado(s) em lote…`);
+      await DB.deleteMany('plano_corte', idsCorte);
     }
 
     onProgresso?.('Concluído!');
-    return { removidos };
+    return { removidos: idsServicos.length + idsCorte.length };
   },
 };
 

@@ -124,6 +124,19 @@ const DB = {
     await deleteDoc(doc(firestore, storeName, String(key)));
   },
 
+  async deleteMany(storeName, keys) {
+    // Firestore só aceita até 500 operações por lote — em vez de
+    // apagar um por um (lento, com ida e volta ao servidor a cada
+    // item), manda tudo em blocos de até 450 numa única operação
+    const TAMANHO_LOTE = 450;
+    for (let i = 0; i < keys.length; i += TAMANHO_LOTE) {
+      const pedaco = keys.slice(i, i + TAMANHO_LOTE);
+      const lote = writeBatch(firestore);
+      pedaco.forEach((k) => lote.delete(doc(firestore, storeName, String(k))));
+      await lote.commit();
+    }
+  },
+
   async clear(storeName) {
     const c = garantirColecao(storeName);
     await c.pronto;
