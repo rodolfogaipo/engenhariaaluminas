@@ -55,6 +55,7 @@ async function renderAdminMais(cont) {
   const flag = jaImportado ? await DB.get('config', 'planilha_importada_em') : null;
   const precisaCorrigir = await CorrigirFuncionarios.precisaCorrigir();
   const gruposDuplicados = await MesclarDuplicados.detectar();
+  const duplicadosServicos = await RemoverDuplicados.detectar();
   const pendencias = await contarPendencias().catch(() => ({ total: 0, servicos: 0, conclusoes: 0, planoCorte: 0, mkt: 0 }));
   const insights = await Insights.gerar().catch(() => []);
 
@@ -125,6 +126,17 @@ async function renderAdminMais(cont) {
     }
 
     ${
+      duplicadosServicos.extraServicos + duplicadosServicos.extraCorte > 0
+        ? `<div class="card" style="border-color:var(--danger-fg); margin-top:16px">
+            <h3 class="section-title" style="font-size:16px">Serviços e Plano de Corte duplicados</h3>
+            <p class="section-sub">Encontrei <b>${duplicadosServicos.extraServicos}</b> serviço(s) e <b>${duplicadosServicos.extraCorte}</b> registro(s) de Plano de Corte que são cópia exata de outro já existente (geralmente de reimportar a planilha mais de uma vez). Isso mantém o mais antigo de cada grupo e apaga só as cópias — nenhum dado diferente é tocado.</p>
+            <div id="remover-dup-status" class="row__meta" style="margin-bottom:10px"></div>
+            <button class="btn btn--danger" id="btn-remover-duplicados">Remover ${duplicadosServicos.extraServicos + duplicadosServicos.extraCorte} duplicado(s)</button>
+          </div>`
+        : ''
+    }
+
+    ${
       precisaCorrigir
         ? `<div class="card" style="border-color:var(--brand-500); margin-top:16px">
             <h3 class="section-title" style="font-size:16px">Corrigir funcionários duplicados</h3>
@@ -176,6 +188,24 @@ async function renderAdminMais(cont) {
         setTimeout(() => renderAdmin(document.getElementById('view')), 1200);
       } catch (e) {
         statusEl.textContent = 'Erro ao mesclar: ' + e.message;
+        btn.disabled = false;
+      }
+    });
+  }
+
+  if (duplicadosServicos.extraServicos + duplicadosServicos.extraCorte > 0) {
+    document.getElementById('btn-remover-duplicados').addEventListener('click', async () => {
+      const total = duplicadosServicos.extraServicos + duplicadosServicos.extraCorte;
+      if (!confirm(`Remover ${total} registro(s) duplicado(s)? Essa ação não pode ser desfeita.`)) return;
+      const btn = document.getElementById('btn-remover-duplicados');
+      const statusEl = document.getElementById('remover-dup-status');
+      btn.disabled = true;
+      try {
+        const resultado = await RemoverDuplicados.executar((msg) => (statusEl.textContent = msg));
+        statusEl.textContent = `Pronto! ${resultado.removidos} duplicado(s) removido(s).`;
+        setTimeout(() => renderAdmin(document.getElementById('view')), 1200);
+      } catch (e) {
+        statusEl.textContent = 'Erro ao remover duplicados: ' + e.message;
         btn.disabled = false;
       }
     });

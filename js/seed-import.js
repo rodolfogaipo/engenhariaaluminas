@@ -385,4 +385,75 @@ const MesclarDuplicados = {
   },
 };
 
-window.MesclarDuplicados = MesclarDuplicados;
+const RemoverDuplicados = {
+  // chave de "conteúdo idêntico" — ignora o id (aleatório) e usa tudo
+  // mais. Reimportações da mesma planilha geram cópias com todos os
+  // campos idênticos, então isso pega exatamente esses casos, sem
+  // risco de apagar dois serviços diferentes que só coincidem no nome.
+  chaveServico(s) {
+    return [
+      s.tipo, s.numeroPedido, s.nome, s.dataProgramada, s.dataFinal,
+      s.funcionarioNome, s.observacoes, s.percentualAproveitamento,
+      s.criadoEm, s.erros, s.errosNovos,
+    ].join('|');
+  },
+  chavePlanoCorte(p) {
+    return [
+      p.numeroPedido, p.nomeProduto, p.dataChegada, p.dataProgramada,
+      p.funcionarioCNPNome, p.status, p.dataInicioCorte, p.dataFinalCorte,
+      p.funcionarioCorteNome,
+    ].join('|');
+  },
+
+  async detectar() {
+    const [servicos, planoCorte] = await Promise.all([DB.getAll('servicos'), DB.getAll('plano_corte')]);
+
+    const gruposServicos = {};
+    servicos.forEach((s) => {
+      const chave = this.chaveServico(s);
+      (gruposServicos[chave] = gruposServicos[chave] || []).push(s);
+    });
+    const gruposCorte = {};
+    planoCorte.forEach((p) => {
+      const chave = this.chavePlanoCorte(p);
+      (gruposCorte[chave] = gruposCorte[chave] || []).push(p);
+    });
+
+    const duplicadosServicos = Object.values(gruposServicos).filter((g) => g.length > 1);
+    const duplicadosCorte = Object.values(gruposCorte).filter((g) => g.length > 1);
+    const extraServicos = duplicadosServicos.reduce((acc, g) => acc + (g.length - 1), 0);
+    const extraCorte = duplicadosCorte.reduce((acc, g) => acc + (g.length - 1), 0);
+
+    return { duplicadosServicos, duplicadosCorte, extraServicos, extraCorte };
+  },
+
+  async executar(onProgresso) {
+    const { duplicadosServicos, duplicadosCorte } = await this.detectar();
+    let removidos = 0;
+
+    onProgresso?.('Removendo serviços duplicados…');
+    for (const grupo of duplicadosServicos) {
+      grupo.sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0));
+      const extras = grupo.slice(1); // mantém o primeiro, remove o resto
+      for (const dup of extras) {
+        await DB.delete('servicos', dup.id);
+        removidos++;
+      }
+    }
+
+    onProgresso?.('Removendo Plano de Corte duplicado…');
+    for (const grupo of duplicadosCorte) {
+      grupo.sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0));
+      const extras = grupo.slice(1);
+      for (const dup of extras) {
+        await DB.delete('plano_corte', dup.id);
+        removidos++;
+      }
+    }
+
+    onProgresso?.('Concluído!');
+    return { removidos };
+  },
+};
+
+window.RemoverDuplicados = RemoverDuplicados;
