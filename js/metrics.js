@@ -143,23 +143,15 @@ const Metrics = {
      (pulando semanas de férias), vezes (1+crescimento). Nas primeiras
      semanas (antes de existirem 4 anteriores), usa quantas houver —
      igual à planilha, que usa AVERAGE(C[n-4]:C[n-1]) a partir da 5ª
-     semana e uma janela crescente antes disso.
-
-     IMPORTANTE: só entram na média semanas com lançamentos feitos de
-     verdade dentro do app. Os itens trazidos da planilha antiga vêm
-     em lotes (uma pessoa "finaliza" dezenas de peças no mesmo dia,
-     porque assim que a planilha registrava o corte), e usar isso como
-     base pra Meta gerava metas absurdas (ex: 400+ projetos/semana). */
+     semana e uma janela crescente antes disso. */
   async calcularMetaPorIndice(eventos, indice, pesos, feriasDoFunc = []) {
     if (indice <= 0) return pesos.meta_minima;
-
-    const eventosDeUsoReal = eventos.filter((e) => !e.importado);
 
     const inicioJanela = Math.max(0, indice - 4);
     let soma = 0;
     let contadas = 0;
     for (let i = inicioJanela; i < indice; i++) {
-      const s = await this.calcularSemanaPorIndice(eventosDeUsoReal, i, pesos, feriasDoFunc);
+      const s = await this.calcularSemanaPorIndice(eventos, i, pesos, feriasDoFunc);
       if (s.emFerias) continue; // semana de férias não conta
       soma += s.projetos;
       contadas++;
