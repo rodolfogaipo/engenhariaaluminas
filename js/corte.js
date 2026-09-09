@@ -124,14 +124,16 @@ async function atualizarListaCorte(view) {
               : '';
 
           return `
-          <div class="row" style="padding:14px 18px; gap:12px">
-            ${fotoThumb}
-            <div class="row__main">
-              <div class="row__title">${escapeHtml(p.nomeProduto)}</div>
-              <div class="row__meta">${p.numeroPedido ? `Nº ${escapeHtml(p.numeroPedido)} · ` : ''}CNP por ${escapeHtml(p.funcionarioCNPNome || '—')} · Chegou em ${Const.formatarData(p.dataChegada)}</div>
-              ${infoCorte}
+          <div class="row" style="padding:14px 18px; display:flex; flex-direction:column; gap:10px; align-items:stretch">
+            <div style="display:flex; gap:12px; align-items:flex-start">
+              ${fotoThumb}
+              <div class="row__main" style="flex:1; min-width:0">
+                <div class="row__title">${escapeHtml(p.nomeProduto)}</div>
+                <div class="row__meta">${p.numeroPedido ? `Nº ${escapeHtml(p.numeroPedido)} · ` : ''}CNP por ${escapeHtml(p.funcionarioCNPNome || '—')} · Chegou em ${Const.formatarData(p.dataChegada)}</div>
+                ${infoCorte}
+              </div>
             </div>
-            <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
               ${badgeStatusCorte(p.status)}
               ${pendenteBadge}
               ${aprovBtn}

@@ -136,7 +136,10 @@ function renderShell(root) {
     const emCampoDeForm = el && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
     if (emCampoDeForm) return; // não atualiza enquanto a pessoa está preenchendo algo
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => renderView(activeTab), 250);
+    debounceTimer = setTimeout(() => {
+      renderView(activeTab);
+      renderTabbar();
+    }, 250);
   };
 }
 
@@ -147,7 +150,10 @@ function renderTabbar() {
     .map(
       (t) => `
       <button class="tabbar__item ${t.id === activeTab ? 'active' : ''}" data-tab="${t.id}">
-        ${t.icon}
+        <span style="position:relative; display:inline-flex">
+          ${t.icon}
+          <span class="tabbar__badge" data-badge-tab="${t.id}" style="display:none; position:absolute; top:-5px; right:-9px; min-width:16px; height:16px; padding:0 4px; border-radius:999px; background:var(--danger-fg, #c0392b); color:#fff; font-size:10px; font-weight:700; line-height:16px; text-align:center"></span>
+        </span>
         <span>${t.label}</span>
       </button>`
     )
@@ -160,6 +166,41 @@ function renderTabbar() {
       renderView(activeTab);
     });
   });
+
+  atualizarBadgesTabbar();
+}
+
+/* Selos vermelhos no menu — avisa sem precisar abrir a aba: quantos
+   avisos ainda não foram marcados como feitos (pra todo mundo) e,
+   só pro Admin, quantos itens estão esperando aprovação. Roda toda
+   vez que os dados mudam (sync em tempo real), não só ao logar. */
+async function atualizarBadgesTabbar() {
+  const user = Auth.current;
+  if (!user) return;
+
+  try {
+    const avisos = await DB.getAll('avisos');
+    const naoFeitos = avisos.filter((a) => !a.feito).length;
+    exibirBadge('avisos', naoFeitos);
+
+    if (Auth.isAdmin()) {
+      const pendencias = await contarPendencias();
+      exibirBadge('admin', pendencias.total);
+    }
+  } catch (e) {
+    console.error('Erro ao atualizar selos do menu:', e);
+  }
+}
+
+function exibirBadge(tabId, quantidade) {
+  const el = document.querySelector(`[data-badge-tab="${tabId}"]`);
+  if (!el) return;
+  if (quantidade > 0) {
+    el.textContent = quantidade > 99 ? '99+' : String(quantidade);
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
 }
 
 /* ---------- TELAS ---------- */
