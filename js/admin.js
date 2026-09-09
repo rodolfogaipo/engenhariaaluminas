@@ -55,7 +55,8 @@ async function renderAdminMais(cont) {
   const flag = jaImportado ? await DB.get('config', 'planilha_importada_em') : null;
   const precisaCorrigir = await CorrigirFuncionarios.precisaCorrigir();
   const gruposDuplicados = await MesclarDuplicados.detectar();
-  const duplicadosServicos = await RemoverDuplicados.detectar();
+  const duplicadosServicos = await RemoverDuplicados.detectar().catch(() => ({ duplicadosServicos: [], duplicadosCorte: [], extraServicos: 0, extraCorte: 0 }));
+  const dataProgramadaCorteAfetados = await LimparDataProgramadaCorte.contar().catch(() => 0);
   const pendencias = await contarPendencias().catch(() => ({ total: 0, servicos: 0, conclusoes: 0, planoCorte: 0, mkt: 0 }));
   const insights = await Insights.gerar().catch(() => []);
 
@@ -137,6 +138,17 @@ async function renderAdminMais(cont) {
     }
 
     ${
+      dataProgramadaCorteAfetados > 0
+        ? `<div class="card" style="border-color:var(--warn-fg); margin-top:16px">
+            <h3 class="section-title" style="font-size:16px">Data Programada errada no Plano de Corte</h3>
+            <p class="section-sub">${dataProgramadaCorteAfetados} registro(s) de Corte ainda têm a Data Programada copiada do Serviço/CNP (bug já corrigido, mas esses são antigos) — isso fazia o corte contar como atrasado sem motivo. Isso só limpa a data, não mexe em mais nada.</p>
+            <div id="limpar-prog-status" class="row__meta" style="margin-bottom:10px"></div>
+            <button class="btn btn--ghost" id="btn-limpar-prog-corte">Limpar ${dataProgramadaCorteAfetados} registro(s)</button>
+          </div>`
+        : ''
+    }
+
+    ${
       precisaCorrigir
         ? `<div class="card" style="border-color:var(--brand-500); margin-top:16px">
             <h3 class="section-title" style="font-size:16px">Corrigir funcionários duplicados</h3>
@@ -206,6 +218,23 @@ async function renderAdminMais(cont) {
         setTimeout(() => renderAdmin(document.getElementById('view')), 1200);
       } catch (e) {
         statusEl.textContent = 'Erro ao remover duplicados: ' + e.message;
+        btn.disabled = false;
+      }
+    });
+  }
+
+  if (dataProgramadaCorteAfetados > 0) {
+    document.getElementById('btn-limpar-prog-corte').addEventListener('click', async () => {
+      if (!confirm(`Limpar a Data Programada de ${dataProgramadaCorteAfetados} registro(s) de Corte?`)) return;
+      const btn = document.getElementById('btn-limpar-prog-corte');
+      const statusEl = document.getElementById('limpar-prog-status');
+      btn.disabled = true;
+      try {
+        const resultado = await LimparDataProgramadaCorte.executar((msg) => (statusEl.textContent = msg));
+        statusEl.textContent = `Pronto! ${resultado.corrigidos} registro(s) corrigido(s).`;
+        setTimeout(() => renderAdmin(document.getElementById('view')), 1200);
+      } catch (e) {
+        statusEl.textContent = 'Erro ao limpar: ' + e.message;
         btn.disabled = false;
       }
     });

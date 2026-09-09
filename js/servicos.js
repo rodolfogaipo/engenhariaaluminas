@@ -1038,7 +1038,11 @@ async function criarPlanoCorteParaCNP(registroCNP) {
     numeroPedido: registroCNP.numeroPedido || '',
     nomeProduto: registroCNP.nome,
     dataChegada: registroCNP.criadoEm,
-    dataProgramada: registroCNP.dataProgramada,
+    // a Data Programada do Corte é independente da Data Programada do
+    // Serviço/CNP — copiar a mesma data fazia o corte nascer
+    // "atrasado" sem culpa de ninguém, só porque o prazo do CNP já
+    // tinha vencido antes de o corte nem começar.
+    dataProgramada: null,
     funcionarioCNPId: registroCNP.funcionarioId,
     funcionarioCNPNome: registroCNP.funcionarioNome,
     status: 'Aguardando',
@@ -1060,7 +1064,7 @@ async function sincronizarPlanoCorteComCNP(registroCNP) {
   if (!pc) return criarPlanoCorteParaCNP(registroCNP);
   pc.numeroPedido = registroCNP.numeroPedido || '';
   pc.nomeProduto = registroCNP.nome;
-  pc.dataProgramada = registroCNP.dataProgramada;
+  // Data Programada NÃO é sincronizada — cada aba tem a sua, não afeta a outra
   await DB.put('plano_corte', pc);
   return pc;
 }

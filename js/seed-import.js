@@ -464,3 +464,25 @@ const RemoverDuplicados = {
 };
 
 window.RemoverDuplicados = RemoverDuplicados;
+
+const LimparDataProgramadaCorte = {
+  // limpeza única: registros de Plano de Corte antigos ainda têm a
+  // Data Programada copiada do Serviço/CNP (bug já corrigido pra
+  // registros novos) — isso fazia itens de corte nascerem "atrasados"
+  // sem motivo. Zera o campo pra parar de contar prazo/atraso errado.
+  async contar() {
+    const planoCorte = await DB.getAllFromServer('plano_corte');
+    return planoCorte.filter((p) => p.dataProgramada != null).length;
+  },
+  async executar(onProgresso) {
+    const planoCorte = await DB.getAllFromServer('plano_corte');
+    const afetados = planoCorte.filter((p) => p.dataProgramada != null);
+    onProgresso?.(`Limpando ${afetados.length} registro(s)…`);
+    afetados.forEach((p) => (p.dataProgramada = null));
+    if (afetados.length) await DB.putMany('plano_corte', afetados);
+    onProgresso?.('Concluído!');
+    return { corrigidos: afetados.length };
+  },
+};
+
+window.LimparDataProgramadaCorte = LimparDataProgramadaCorte;
