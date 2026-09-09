@@ -157,6 +157,7 @@ async function atualizarListaServicos(view) {
     })
     .sort((a, b) => {
       const prioridadeDe = (s) => {
+        if (s.aprovado !== 'aprovado') return -1; // pendente de aprovação sempre no topo, pro Admin achar rápido
         const estado = estadoServico(s);
         if (estado === 'em_andamento') return 0;
         if (estado === 'disponivel' && s.funcionarioId) return 1; // Admin já atribuiu um nome

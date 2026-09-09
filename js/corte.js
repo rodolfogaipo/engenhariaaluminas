@@ -69,7 +69,13 @@ async function atualizarListaCorte(view) {
         Const_normaliza(p.numeroPedido).includes(filtro)
       );
     })
-    .sort((a, b) => b.criadoEm - a.criadoEm);
+    .sort((a, b) => {
+      // pendente de aprovação sempre no topo, pro Admin achar rápido
+      const pendA = a.aprovado !== 'aprovado' ? 0 : 1;
+      const pendB = b.aprovado !== 'aprovado' ? 0 : 1;
+      if (pendA !== pendB) return pendA - pendB;
+      return b.criadoEm - a.criadoEm;
+    });
 
   const listaEl = document.getElementById('lista-corte');
   if (!listaEl) return;

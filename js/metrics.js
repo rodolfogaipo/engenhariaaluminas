@@ -83,7 +83,9 @@ const Metrics = {
     const eventos = [];
 
     servicos.forEach((s) => {
-      if (s.funcionarioId === funcionarioId && s.dataFinal) {
+      // só conta pra Nota/Meta depois que o Admin aprova — evita que
+      // um lançamento do próprio funcionário conte antes de validado
+      if (s.funcionarioId === funcionarioId && s.dataFinal && s.aprovado === 'aprovado') {
         eventos.push({
           dataFinal: s.dataFinal,
           temPrazo: s.dataProgramada != null,
@@ -99,7 +101,7 @@ const Metrics = {
     });
 
     planoCorte.forEach((p) => {
-      if (p.funcionarioCorteId === funcionarioId && p.dataFinalCorte) {
+      if (p.funcionarioCorteId === funcionarioId && p.dataFinalCorte && p.aprovado === 'aprovado') {
         eventos.push({
           dataFinal: p.dataFinalCorte,
           temPrazo: p.dataProgramada != null,
