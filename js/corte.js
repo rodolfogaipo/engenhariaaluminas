@@ -97,7 +97,11 @@ async function atualizarListaCorte(view) {
           const editBtn =
             user.tipo === 'pcp'
               ? ''
-              : `<button class="btn btn--ghost" data-editar="${p.id}" style="padding:6px 12px; font-size:13px">${user.tipo === 'admin' ? 'Editar' : 'Atualizar'}</button>`;
+              : user.tipo === 'admin'
+              ? `<button class="btn btn--ghost" data-editar="${p.id}" style="padding:6px 12px; font-size:13px">Editar</button>`
+              : p.status !== 'Concluído'
+              ? `<button class="btn btn--ghost" data-editar="${p.id}" style="padding:6px 12px; font-size:13px">Atualizar</button>`
+              : ''; // funcionário só atualiza enquanto não está concluído — depois disso só o Admin edita/exclui, senão vira bagunça
           const delBtn =
             user.tipo === 'admin'
               ? `<button class="btn btn--danger" data-excluir="${p.id}" style="padding:6px 12px; font-size:13px">Excluir</button>`

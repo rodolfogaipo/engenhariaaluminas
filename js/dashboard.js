@@ -315,7 +315,9 @@ async function periodoEhAtualOuFuturo() {
 
 async function renderDashboardEquipeConteudo(cont) {
   const usuarios = await DB.getAll('usuarios');
-  const funcionarios = usuarios.filter((u) => u.tipo !== 'admin');
+  // só quem realmente produz entra no ranking de % da Meta — Admin,
+  // PCP e MKT não têm meta de produção, então não fazem sentido aqui
+  const funcionarios = usuarios.filter((u) => u.tipo === 'funcionario');
 
   if (funcionarios.length === 0) {
     cont.innerHTML = `
@@ -562,7 +564,7 @@ async function renderDashboardIndividual(view, userId, nomeExibicao, subtitulo, 
   }
 
   cont.innerHTML = `
-    ${!atual.emFerias ? renderCardMetaSemanal(atual) : ''}
+    ${!atual.emFerias && Auth.current.tipo === 'funcionario' ? renderCardMetaSemanal(atual) : ''}
 
     <div class="stat-grid">
       <div class="card"><div class="stat"><div class="stat__value">${atual.emFerias ? '🏖️' : atual.projetos}</div><div class="stat__label">Projetos na semana</div></div></div>
