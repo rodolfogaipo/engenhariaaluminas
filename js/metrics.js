@@ -126,7 +126,12 @@ const Metrics = {
     const atraso = daSemana.filter((e) => e.temPrazo && e.dataFinal > e.dataProgramada).length;
     const erros = daSemana.reduce((s, e) => s + (e.erros || 0), 0);
     const errosNovos = daSemana.reduce((s, e) => s + (e.errosNovos || 0), 0);
-    const pctPrazo = projetos > 0 ? prazo / projetos : 0;
+    // %Prazo também só considera quem tem Data Programada — um item
+    // sem prazo definido não é "atrasado", então não deve contar
+    // contra (nem a favor). Sem nenhum item com prazo na semana,
+    // fica neutro (100%: não desconta nada da nota).
+    const comPrazo = daSemana.filter((e) => e.temPrazo).length;
+    const pctPrazo = comPrazo > 0 ? prazo / comPrazo : 1;
 
     let nota =
       projetos * pesos.peso_produtividade +
