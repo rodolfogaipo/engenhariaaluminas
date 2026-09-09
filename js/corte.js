@@ -228,11 +228,15 @@ async function renderCorteForm(view) {
         <input id="f-fim-corte" type="date" value="${escapeHtml(st.dataFinalCorte)}" />
       </div>
 
-      <div class="field">
-        <label for="f-imagens-corte">Foto do produto (opcional, ajuda o funcionário a identificar)</label>
-        <input id="f-imagens-corte" type="file" accept="image/*" multiple />
-        <div id="lista-imagens-corte" style="margin-top:10px"></div>
-      </div>
+      ${
+        Auth.isAdmin()
+          ? `<div class="field">
+              <label for="f-imagens-corte">Foto do produto (opcional, ajuda o funcionário a identificar)</label>
+              <input id="f-imagens-corte" type="file" accept="image/*" multiple />
+              <div id="lista-imagens-corte" style="margin-top:10px"></div>
+            </div>`
+          : ''
+      }
 
       <div class="row__meta" style="margin-bottom:14px">
         ${Auth.isAdmin() ? 'Como você é Admin, essa atualização já entra aprovada.' : 'Essa atualização fica pendente até o Admin aprovar.'}
@@ -253,25 +257,27 @@ async function renderCorteForm(view) {
   document.getElementById('f-fim-corte').addEventListener('input', (ev) => (st.dataFinalCorte = ev.target.value));
 
   const imagensInput = document.getElementById('f-imagens-corte');
-  imagensInput.addEventListener('change', async (ev) => {
-    const arquivos = Array.from(ev.target.files || []);
-    if (arquivos.length === 0) return;
-    imagensInput.disabled = true;
-    document.getElementById('btn-salvar-corte').disabled = true;
-    const cont = document.getElementById('lista-imagens-corte');
-    for (const arquivo of arquivos) {
-      cont.innerHTML = `<div class="row__meta">Enviando "${escapeHtml(arquivo.name)}" pro Google Drive… aguarde antes de Salvar</div>`;
-      try {
-        const img = await Drive.enviarArquivo(arquivo);
-        st.imagens.push(img);
-      } catch (e) {
-        st.erro = `Não consegui enviar "${arquivo.name}": ${e.message}`;
+  if (imagensInput) {
+    imagensInput.addEventListener('change', async (ev) => {
+      const arquivos = Array.from(ev.target.files || []);
+      if (arquivos.length === 0) return;
+      imagensInput.disabled = true;
+      document.getElementById('btn-salvar-corte').disabled = true;
+      const cont = document.getElementById('lista-imagens-corte');
+      for (const arquivo of arquivos) {
+        cont.innerHTML = `<div class="row__meta">Enviando "${escapeHtml(arquivo.name)}" pro Google Drive… aguarde antes de Salvar</div>`;
+        try {
+          const img = await Drive.enviarArquivo(arquivo);
+          st.imagens.push(img);
+        } catch (e) {
+          st.erro = `Não consegui enviar "${arquivo.name}": ${e.message}`;
+        }
       }
-    }
-    imagensInput.value = '';
-    imagensInput.disabled = false;
-    renderCorteForm(view);
-  });
+      imagensInput.value = '';
+      imagensInput.disabled = false;
+      renderCorteForm(view);
+    });
+  }
 
   renderListaImagensCorte(view);
 

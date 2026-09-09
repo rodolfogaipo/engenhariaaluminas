@@ -231,11 +231,15 @@ async function renderMktForm(view) {
         </div>`
       ).join('')}
 
-      <div class="field">
-        <label for="f-mkt-imagens">Fotos do produto (opcional, até 200MB cada)</label>
-        <input id="f-mkt-imagens" type="file" accept="image/*" multiple />
-        <div id="lista-imagens-mkt" style="margin-top:10px"></div>
-      </div>
+      ${
+        Auth.isAdmin()
+          ? `<div class="field">
+              <label for="f-mkt-imagens">Fotos do produto (opcional, até 200MB cada)</label>
+              <input id="f-mkt-imagens" type="file" accept="image/*" multiple />
+              <div id="lista-imagens-mkt" style="margin-top:10px"></div>
+            </div>`
+          : ''
+      }
 
       <div style="display:flex; gap:10px; margin-top:8px">
         <button class="btn btn--ghost" id="btn-cancelar-mkt" style="flex:1">Cancelar</button>
@@ -252,25 +256,27 @@ async function renderMktForm(view) {
   });
 
   const imagensInput = document.getElementById('f-mkt-imagens');
-  imagensInput.addEventListener('change', async (ev) => {
-    const arquivos = Array.from(ev.target.files || []);
-    if (arquivos.length === 0) return;
-    imagensInput.disabled = true;
-    document.getElementById('btn-salvar-mkt').disabled = true;
-    const cont = document.getElementById('lista-imagens-mkt');
-    for (const arquivo of arquivos) {
-      cont.innerHTML = `<div class="row__meta">Enviando "${escapeHtml(arquivo.name)}" pro Google Drive… aguarde antes de Salvar</div>`;
-      try {
-        const img = await Drive.enviarArquivo(arquivo);
-        st.imagens.push(img);
-      } catch (e) {
-        st.erro = `Não consegui enviar "${arquivo.name}": ${e.message}`;
+  if (imagensInput) {
+    imagensInput.addEventListener('change', async (ev) => {
+      const arquivos = Array.from(ev.target.files || []);
+      if (arquivos.length === 0) return;
+      imagensInput.disabled = true;
+      document.getElementById('btn-salvar-mkt').disabled = true;
+      const cont = document.getElementById('lista-imagens-mkt');
+      for (const arquivo of arquivos) {
+        cont.innerHTML = `<div class="row__meta">Enviando "${escapeHtml(arquivo.name)}" pro Google Drive… aguarde antes de Salvar</div>`;
+        try {
+          const img = await Drive.enviarArquivo(arquivo);
+          st.imagens.push(img);
+        } catch (e) {
+          st.erro = `Não consegui enviar "${arquivo.name}": ${e.message}`;
+        }
       }
-    }
-    imagensInput.value = '';
-    imagensInput.disabled = false;
-    renderMktForm(view);
-  });
+      imagensInput.value = '';
+      imagensInput.disabled = false;
+      renderMktForm(view);
+    });
+  }
 
   renderListaImagensMkt(view);
 
