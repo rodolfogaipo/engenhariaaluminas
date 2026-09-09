@@ -212,13 +212,31 @@ async function renderTreinoForm(view) {
       st.erro = 'Digite um título.';
       return renderTreinoForm(view);
     }
-    const registro = st.editId ? await DB.get('treinamento', st.editId) : { id: dbUtil.uid(), criadoEm: Date.now() };
-    registro.titulo = titulo;
-    registro.descricao = st.descricao || '';
-    registro.anexos = st.anexos;
-    registro.atualizadoEm = Date.now();
-    await DB.put('treinamento', registro);
-    voltarParaListaTreino();
+    const btn = document.getElementById('btn-salvar-treino');
+    const btnCancelar = document.getElementById('btn-cancelar-treino');
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+    if (btnCancelar) btnCancelar.disabled = true;
+    window.operacaoEmAndamento = true;
+    try {
+      await comTimeout(
+        (async () => {
+          const registro = st.editId ? await DB.get('treinamento', st.editId) : { id: dbUtil.uid(), criadoEm: Date.now() };
+          registro.titulo = titulo;
+          registro.descricao = st.descricao || '';
+          registro.anexos = st.anexos;
+          registro.atualizadoEm = Date.now();
+          await DB.put('treinamento', registro);
+          voltarParaListaTreino();
+        })()
+      );
+    } catch (e) {
+      console.error('Erro ao salvar treinamento:', e);
+      st.erro = 'Não consegui salvar: ' + (e && e.message ? e.message : 'erro desconhecido. Confira sua conexão e tente de novo.');
+      window.operacaoEmAndamento = false;
+      await renderTreinoForm(view);
+      return;
+    }
+    window.operacaoEmAndamento = false;
   });
 }
 

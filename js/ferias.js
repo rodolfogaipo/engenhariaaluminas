@@ -190,7 +190,26 @@ async function renderFeriasForm(view) {
   document.getElementById('f-inicio-ferias').addEventListener('input', (ev) => (st.dataInicio = ev.target.value));
   document.getElementById('f-fim-ferias').addEventListener('input', (ev) => (st.dataFim = ev.target.value));
 
-  document.getElementById('btn-salvar-ferias').addEventListener('click', () => salvarFerias(view));
+  document.getElementById('btn-salvar-ferias').addEventListener('click', () => salvarFeriasComTratamentoDeErro(view));
+}
+
+async function salvarFeriasComTratamentoDeErro(view) {
+  const st = FeriasView.formState;
+  const btn = document.getElementById('btn-salvar-ferias');
+  const btnCancelar = document.getElementById('btn-cancelar-ferias');
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+  if (btnCancelar) btnCancelar.disabled = true;
+  window.operacaoEmAndamento = true;
+  try {
+    await comTimeout(salvarFerias(view));
+  } catch (e) {
+    console.error('Erro ao salvar férias:', e);
+    st.erro = 'Não consegui salvar: ' + (e && e.message ? e.message : 'erro desconhecido. Confira sua conexão e tente de novo.');
+    window.operacaoEmAndamento = false;
+    await renderFeriasForm(view);
+    return;
+  }
+  window.operacaoEmAndamento = false;
 }
 
 function voltarParaListaFerias() {

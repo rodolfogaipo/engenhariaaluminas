@@ -275,7 +275,26 @@ async function renderCorteForm(view) {
 
   renderListaImagensCorte(view);
 
-  document.getElementById('btn-salvar-corte').addEventListener('click', () => salvarCorte(view));
+  document.getElementById('btn-salvar-corte').addEventListener('click', () => salvarCorteComTratamentoDeErro(view));
+}
+
+async function salvarCorteComTratamentoDeErro(view) {
+  const st = CorteView.formState;
+  const btn = document.getElementById('btn-salvar-corte');
+  const btnCancelar = document.getElementById('btn-cancelar-corte');
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+  if (btnCancelar) btnCancelar.disabled = true;
+  window.operacaoEmAndamento = true;
+  try {
+    await comTimeout(salvarCorte(view));
+  } catch (e) {
+    console.error('Erro ao salvar corte:', e);
+    st.erro = 'Não consegui salvar: ' + (e && e.message ? e.message : 'erro desconhecido. Confira sua conexão e tente de novo.');
+    window.operacaoEmAndamento = false;
+    await renderCorteForm(view);
+    return;
+  }
+  window.operacaoEmAndamento = false;
 }
 
 function renderListaImagensCorte(view) {

@@ -228,7 +228,26 @@ async function renderAvisoForm(view) {
   document.getElementById('f-aviso-hora').addEventListener('input', (ev) => (st.hora = ev.target.value));
   document.getElementById('f-aviso-feito').addEventListener('change', (ev) => (st.feito = ev.target.checked));
 
-  document.getElementById('btn-salvar-aviso').addEventListener('click', () => salvarAviso(view));
+  document.getElementById('btn-salvar-aviso').addEventListener('click', () => salvarAvisoComTratamentoDeErro(view));
+}
+
+async function salvarAvisoComTratamentoDeErro(view) {
+  const st = AvisosView.formState;
+  const btn = document.getElementById('btn-salvar-aviso');
+  const btnCancelar = document.getElementById('btn-cancelar-aviso');
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+  if (btnCancelar) btnCancelar.disabled = true;
+  window.operacaoEmAndamento = true;
+  try {
+    await comTimeout(salvarAviso(view));
+  } catch (e) {
+    console.error('Erro ao salvar aviso:', e);
+    st.erro = 'Não consegui salvar: ' + (e && e.message ? e.message : 'erro desconhecido. Confira sua conexão e tente de novo.');
+    window.operacaoEmAndamento = false;
+    await renderAvisoForm(view);
+    return;
+  }
+  window.operacaoEmAndamento = false;
 }
 
 function voltarParaListaAvisos() {

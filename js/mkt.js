@@ -274,7 +274,26 @@ async function renderMktForm(view) {
 
   renderListaImagensMkt(view);
 
-  document.getElementById('btn-salvar-mkt').addEventListener('click', () => salvarMkt(view));
+  document.getElementById('btn-salvar-mkt').addEventListener('click', () => salvarMktComTratamentoDeErro(view));
+}
+
+async function salvarMktComTratamentoDeErro(view) {
+  const st = MktView.formState;
+  const btn = document.getElementById('btn-salvar-mkt');
+  const btnCancelar = document.getElementById('btn-cancelar-mkt');
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+  if (btnCancelar) btnCancelar.disabled = true;
+  window.operacaoEmAndamento = true;
+  try {
+    await comTimeout(salvarMkt(view));
+  } catch (e) {
+    console.error('Erro ao salvar produto MKT:', e);
+    st.erro = 'Não consegui salvar: ' + (e && e.message ? e.message : 'erro desconhecido. Confira sua conexão e tente de novo.');
+    window.operacaoEmAndamento = false;
+    await renderMktForm(view);
+    return;
+  }
+  window.operacaoEmAndamento = false;
 }
 
 function renderListaImagensMkt(view) {

@@ -406,7 +406,31 @@ async function renderFormUsuario(cont, view) {
     renderAdminUsuarios(cont, view);
   });
 
-  document.getElementById('btn-salvar-usuario').addEventListener('click', () => salvarUsuario(cont, view));
+  document.getElementById('btn-salvar-usuario').addEventListener('click', () => salvarUsuarioComTratamentoDeErro(cont, view));
+}
+
+async function salvarUsuarioComTratamentoDeErro(cont, view) {
+  const btn = document.getElementById('btn-salvar-usuario');
+  const btnCancelar = document.getElementById('btn-cancelar-usuario');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Salvando…';
+  }
+  if (btnCancelar) btnCancelar.disabled = true;
+  // mesma trava usada em Serviços: segura o auto-refresh em tempo real
+  // enquanto salva, e nunca deixa a tela presa em "Salvando…" pra
+  // sempre (limite de 12s) se o servidor não responder
+  window.operacaoEmAndamento = true;
+  try {
+    await comTimeout(salvarUsuario(cont, view));
+  } catch (e) {
+    console.error('Erro ao salvar usuário:', e);
+    AdminView.erro = 'Não consegui salvar: ' + (e && e.message ? e.message : 'erro desconhecido. Confira sua conexão e tente de novo.');
+    window.operacaoEmAndamento = false;
+    await renderFormUsuario(cont, view);
+    return;
+  }
+  window.operacaoEmAndamento = false;
 }
 
 async function salvarUsuario(cont, view) {
@@ -626,15 +650,33 @@ async function renderAdminAnotacaoForm(cont, view) {
       st.erro = 'Digite o texto da anotação.';
       return renderAdminAnotacaoForm(cont, view);
     }
-    const registro = st.editId
-      ? await DB.get('anotacoes_admin', st.editId)
-      : { id: dbUtil.uid(), criadoEm: Date.now() };
-    registro.texto = texto;
-    registro.data = st.data ? Const.inputDateParaTimestamp(st.data) : Date.now();
-    registro.feito = !!st.feito;
-    await DB.put('anotacoes_admin', registro);
-    AdminAnotacoesView.subView = 'lista';
-    renderAdminAnotacoes(cont, view);
+    const btn = document.getElementById('btn-salvar-anotacao');
+    const btnCancelar = document.getElementById('btn-cancelar-anotacao');
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+    if (btnCancelar) btnCancelar.disabled = true;
+    window.operacaoEmAndamento = true;
+    try {
+      await comTimeout(
+        (async () => {
+          const registro = st.editId
+            ? await DB.get('anotacoes_admin', st.editId)
+            : { id: dbUtil.uid(), criadoEm: Date.now() };
+          registro.texto = texto;
+          registro.data = st.data ? Const.inputDateParaTimestamp(st.data) : Date.now();
+          registro.feito = !!st.feito;
+          await DB.put('anotacoes_admin', registro);
+          AdminAnotacoesView.subView = 'lista';
+          renderAdminAnotacoes(cont, view);
+        })()
+      );
+    } catch (e) {
+      console.error('Erro ao salvar anotação:', e);
+      st.erro = 'Não consegui salvar: ' + (e && e.message ? e.message : 'erro desconhecido. Confira sua conexão e tente de novo.');
+      window.operacaoEmAndamento = false;
+      await renderAdminAnotacaoForm(cont, view);
+      return;
+    }
+    window.operacaoEmAndamento = false;
   });
 }
 
@@ -759,18 +801,31 @@ function renderFormCategoria(cont, view) {
   document.getElementById('f-cat-porcentagem').addEventListener('change', (ev) => (st.temPorcentagem = ev.target.checked));
 
   document.getElementById('btn-salvar-categoria').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-salvar-categoria');
+    const btnCancelar = document.getElementById('btn-cancelar-categoria');
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+    if (btnCancelar) btnCancelar.disabled = true;
+    window.operacaoEmAndamento = true;
     try {
-      if (editando) {
-        await Categorias.atualizar(st.editId, { nome: st.nome, temPorcentagem: st.temPorcentagem });
-      } else {
-        await Categorias.criar(st.nome, st.temPorcentagem);
-      }
-      st.formAberto = false;
-      renderAdminCategorias(cont, view);
+      await comTimeout(
+        (async () => {
+          if (editando) {
+            await Categorias.atualizar(st.editId, { nome: st.nome, temPorcentagem: st.temPorcentagem });
+          } else {
+            await Categorias.criar(st.nome, st.temPorcentagem);
+          }
+          st.formAberto = false;
+          renderAdminCategorias(cont, view);
+        })()
+      );
     } catch (e) {
-      st.erro = e.message;
-      renderFormCategoria(cont, view);
+      console.error('Erro ao salvar categoria:', e);
+      st.erro = e.message || 'Não consegui salvar. Confira sua conexão e tente de novo.';
+      window.operacaoEmAndamento = false;
+      await renderFormCategoria(cont, view);
+      return;
     }
+    window.operacaoEmAndamento = false;
   });
 }
 
