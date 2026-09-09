@@ -350,6 +350,10 @@ async function renderDashboardEquipeConteudo(cont) {
           meta: atual.meta,
           pctMeta: atual.pctMeta,
           nota: atual.nota,
+          pctPrazo: atual.pctPrazo,
+          atraso: atual.atraso,
+          erros: atual.erros,
+          errosNovos: atual.errosNovos,
         };
       }
 
@@ -415,7 +419,8 @@ async function renderDashboardEquipeConteudo(cont) {
                   ? '<div class="row__meta">🏖️ De férias neste período</div>'
                   : l.meta == null
                   ? `<div class="row__meta">${l.projetos} projetos concluídos · ${(l.pctMeta * 100).toFixed(0)}% da meta (média semanal)</div>`
-                  : `<div class="row__meta">${l.projetos} / ${l.meta.toFixed(1)} projetos · ${(l.pctMeta * 100).toFixed(0)}% da meta</div>`
+                  : `<div class="row__meta">${l.projetos} / ${l.meta.toFixed(1)} projetos · ${(l.pctMeta * 100).toFixed(0)}% da meta</div>
+                     <div class="row__meta" style="opacity:.75">Prazo: ${(l.pctPrazo * 100).toFixed(0)}% · Atrasos: ${l.atraso} · Erros: ${l.erros} · Erros novos: ${l.errosNovos}</div>`
               }
             </div>
             <div>${l.emFerias ? '' : `<span class="badge ${l.pctMeta >= 1 ? 'badge--ok' : l.pctMeta >= 0.7 ? 'badge--warn' : 'badge--danger'}">Nota ${l.nota.toFixed(0)}</span>`}</div>
