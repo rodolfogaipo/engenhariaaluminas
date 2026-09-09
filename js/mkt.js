@@ -108,8 +108,8 @@ async function atualizarListaMkt(view) {
   listaEl.innerHTML = filtrados
     .map((p) => {
       const medidas = CAMPOS_MEDIDA.filter((c) => p[c.chave] != null && p[c.chave] !== '')
-        .map((c) => `${c.label}: ${escapeHtml(String(p[c.chave]))}cm`)
-        .join(' · ');
+        .map((c) => `<div>${c.label}: ${escapeHtml(String(p[c.chave]))}cm</div>`)
+        .join('');
       const statusBadge =
         p.aprovado === 'aprovado' ? '' : '<span class="badge badge--warn">Pendente aprovação</span>';
       const aprovBtn =
