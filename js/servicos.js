@@ -521,7 +521,7 @@ async function renderServicoForm(view) {
   const ehCorteComAproveitamento = Categorias.temPorcentagem(categoriasCache, st.tipo);
   const ehAdmin = Auth.isAdmin();
   if (ehAdmin) {
-    funcionariosCache = (await DB.getAll('usuarios')).filter((u) => u.tipo !== 'admin');
+    funcionariosCache = await DB.getAll('usuarios'); // inclui o próprio Admin, pra ele poder se atribuir serviços e aparecer em "Minha Produção"
   }
 
   view.innerHTML = `
@@ -1093,7 +1093,7 @@ async function renderConcluirServico(view) {
     st.dataConclusao = dataParaInputDate(registro?.concluidoInformadoEm || Date.now());
   }
   if (ehAdmin) {
-    funcionariosCache = (await DB.getAll('usuarios')).filter((u) => u.tipo !== 'admin');
+    funcionariosCache = await DB.getAll('usuarios'); // inclui o próprio Admin, pra ele poder se atribuir serviços e aparecer em "Minha Produção"
   }
 
   view.innerHTML = `
