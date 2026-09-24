@@ -269,6 +269,7 @@ async function atualizarListaServicos(view) {
                   : ''
               }
               ${s.dataFinal ? `<div class="row__meta">Erros: ${s.erros || 0} · Erros novos: ${s.errosNovos || 0}</div>` : ''}
+              ${s.observacoes ? `<div class="row__meta" style="font-style:italic">📝 ${escapeHtml(s.observacoes)}</div>` : ''}
               ${
                 s.anexos && s.anexos.filter((a) => a.tipo === 'imagem').length
                   ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px">${s.anexos
