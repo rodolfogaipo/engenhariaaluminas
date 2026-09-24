@@ -59,7 +59,7 @@ async function atualizarListaCorte(view) {
   const filtro = Const_normaliza(CorteView.filtroTexto);
 
   const filtrados = todos
-    .filter((p) => (user.tipo === 'pcp' ? p.status === 'Concluído' : true))
+    .filter((p) => (Auth.somenteLeitura() ? p.status === 'Concluído' : true))
     .filter((p) => {
       if (!filtro) return true;
       return (
@@ -101,7 +101,7 @@ async function atualizarListaCorte(view) {
               ? `<button class="btn btn--ghost" data-aprovar="${p.id}" style="padding:6px 12px; font-size:13px">Aprovar</button>`
               : '';
           const editBtn =
-            user.tipo === 'pcp'
+            Auth.somenteLeitura()
               ? ''
               : user.tipo === 'admin'
               ? `<button class="btn btn--ghost" data-editar="${p.id}" style="padding:6px 12px; font-size:13px">Editar</button>`

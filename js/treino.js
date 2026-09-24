@@ -8,7 +8,17 @@
 const TreinoView = {
   subView: 'lista', // 'lista' | 'form'
   formState: null,
+  filtroTexto: '',
 };
+
+function normalizaBuscaTreino(s) {
+  return (s || '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
 
 function formatarTamanhoArquivoTreino(bytes) {
   if (!bytes) return '';
@@ -30,9 +40,6 @@ async function renderTreino(view) {
 }
 
 async function renderTreinoLista(view) {
-  const todos = await DB.getAll('treinamento');
-  const ordenados = todos.sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0));
-
   view.innerHTML = `
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap">
       <div>
@@ -41,8 +48,17 @@ async function renderTreinoLista(view) {
       </div>
       ${Auth.isAdmin() ? '<button class="btn btn--primary" id="btn-novo-treino">+ Novo Conteúdo</button>' : ''}
     </div>
+    <div class="field" style="margin-bottom:20px">
+      <input id="busca-treino" placeholder="Buscar por título, descrição ou nome do anexo…" value="${escapeHtml(TreinoView.filtroTexto)}" />
+    </div>
     <div id="lista-treino"></div>
   `;
+
+  const buscaInput = document.getElementById('busca-treino');
+  buscaInput.addEventListener('input', () => {
+    TreinoView.filtroTexto = buscaInput.value;
+    atualizarListaTreino(view);
+  });
 
   if (Auth.isAdmin()) {
     document.getElementById('btn-novo-treino').addEventListener('click', () => {
@@ -52,7 +68,35 @@ async function renderTreinoLista(view) {
     });
   }
 
+  await atualizarListaTreino(view);
+}
+
+async function atualizarListaTreino(view) {
+  const todos = await DB.getAll('treinamento');
+  const filtro = normalizaBuscaTreino(TreinoView.filtroTexto);
+  const ordenados = todos
+    .filter((t) => {
+      if (!filtro) return true;
+      return (
+        normalizaBuscaTreino(t.titulo).includes(filtro) ||
+        normalizaBuscaTreino(t.descricao).includes(filtro) ||
+        (t.anexos || []).some((a) => normalizaBuscaTreino(a.nome).includes(filtro))
+      );
+    })
+    .sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0));
+
   const listaEl = document.getElementById('lista-treino');
+  if (!listaEl) return;
+  if (ordenados.length === 0 && todos.length > 0) {
+    listaEl.innerHTML = `
+      <div class="card">
+        <div class="empty">
+          <div class="empty__title">Nada encontrado</div>
+          <div class="empty__sub">Nenhum conteúdo com "${escapeHtml(TreinoView.filtroTexto)}". Tente outra palavra.</div>
+        </div>
+      </div>`;
+    return;
+  }
   if (ordenados.length === 0) {
     listaEl.innerHTML = `
       <div class="card">
@@ -136,7 +180,7 @@ async function renderTreinoLista(view) {
         for (const a of t.anexos) await Drive.excluirArquivo(a.id);
       }
       await DB.delete('treinamento', btn.dataset.excluirTreino);
-      renderTreinoLista(view);
+      atualizarListaTreino(view);
     });
   });
 }

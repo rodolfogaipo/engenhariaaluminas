@@ -12,7 +12,7 @@ const AdminView = {
   edicaoId: null,
   fotoBase64: null,
   erro: '',
-  formValues: { nome: '', login: '', tipo: 'funcionario' },
+  formValues: { nome: '', login: '', tipo: 'funcionario', permissoes: Permissoes.padraoDoTipo('funcionario') },
 };
 
 async function renderAdmin(view) {
@@ -115,6 +115,12 @@ async function renderAdminMais(cont) {
       <button class="btn btn--primary" id="btn-fazer-backup">Fazer backup agora</button>
     </div>
 
+    <div class="card" style="margin-top:16px">
+      <h3 class="section-title" style="font-size:16px">📊 Exportar planilha (Excel / CSV)</h3>
+      <p class="section-sub">Diferente do backup: exporta só os serviços concluídos do período, funcionário ou seleção que você escolher, numa tabela limpa pronta pro Excel.</p>
+      <button class="btn btn--metal" id="btn-ir-exportar">Escolher o que exportar</button>
+    </div>
+
     ${
       gruposDuplicados.length > 0
         ? `<div class="card" style="border-color:var(--brand-500); margin-top:16px">
@@ -187,6 +193,13 @@ async function renderAdminMais(cont) {
       statusEl.textContent = 'Erro ao fazer backup: ' + e.message;
     }
     btn.disabled = false;
+  });
+
+  document.getElementById('btn-ir-exportar').addEventListener('click', () => {
+    RelatorioView.aba = 'relatorio';
+    activeTab = 'relatorio';
+    renderTabbar();
+    renderView('relatorio');
   });
 
   if (gruposDuplicados.length > 0) {
@@ -314,7 +327,8 @@ async function renderAdminUsuarios(cont, view) {
             </div>
             <div class="row__main">
               <div class="row__title">${escapeHtml(u.nome)}</div>
-              <div class="row__meta">@${escapeHtml(u.login)} · ${Const.rotuloTipoUsuario(u.tipo)}</div>
+              <div class="row__meta">@${escapeHtml(u.login)} · ${Const.rotuloTipoUsuario(u.tipo)}${u.tipo !== 'admin' && Permissoes.ehPersonalizado(u) ? ' (personalizado)' : ''}</div>
+              ${u.tipo !== 'admin' ? `<div class="row__meta">Vê: ${Permissoes.doUsuario(u).abas.map((id) => (Permissoes.ABAS.find((a) => a.id === id) || {}).label).filter(Boolean).join(', ') || 'nenhuma aba'}${Permissoes.doUsuario(u).somenteLeitura ? ' · Serviços/Corte só leitura' : ''}</div>` : ''}
               <div class="row__meta">${contagemPorUsuario[u.id] || 0} serviço(s) vinculados · ID: ${escapeHtml(u.id)}</div>
             </div>
           </div>
@@ -333,7 +347,7 @@ async function renderAdminUsuarios(cont, view) {
     AdminView.edicaoId = null;
     AdminView.fotoBase64 = null;
     AdminView.erro = '';
-    AdminView.formValues = { nome: '', login: '', tipo: 'funcionario' };
+    AdminView.formValues = { nome: '', login: '', tipo: 'funcionario', permissoes: Permissoes.padraoDoTipo('funcionario') };
     renderAdminUsuarios(cont, view);
   });
 
@@ -344,7 +358,7 @@ async function renderAdminUsuarios(cont, view) {
       AdminView.edicaoId = u.id;
       AdminView.fotoBase64 = u.foto || null;
       AdminView.erro = '';
-      AdminView.formValues = { nome: u.nome, login: u.login, tipo: u.tipo };
+      AdminView.formValues = { nome: u.nome, login: u.login, tipo: u.tipo, permissoes: Permissoes.doUsuario(u) };
       renderAdminUsuarios(cont, view);
     });
   });
@@ -398,7 +412,29 @@ async function renderFormUsuario(cont, view) {
           <option value="pcp" ${fv.tipo === 'pcp' ? 'selected' : ''}>PCP (só vê serviços/corte concluídos + MKT)</option>
           <option value="mkt" ${fv.tipo === 'mkt' ? 'selected' : ''}>MKT (só vê a aba MKT)</option>
         </select>
+        <div class="row__meta" style="margin-top:6px">Trocar o tipo pré-marca as abas padrão dele. Depois você pode ajustar as caixinhas só pra essa pessoa.</div>
       </div>
+
+      ${
+        fv.tipo === 'admin'
+          ? '<div class="row__meta" style="margin-bottom:16px">Administrador vê todas as abas, inclusive Relatório e o painel Admin.</div>'
+          : `<div class="field">
+              <label>Abas que essa pessoa pode ver</label>
+              <div class="perm-grid">
+                ${Permissoes.ABAS.map(
+                  (a) => `
+                  <label class="perm-item">
+                    <input type="checkbox" data-perm-aba="${a.id}" ${fv.permissoes.abas.includes(a.id) ? 'checked' : ''} />
+                    <span>${a.label}</span>
+                  </label>`
+                ).join('')}
+              </div>
+              <label class="perm-item" style="margin-top:10px">
+                <input type="checkbox" id="f-perm-leitura" ${fv.permissoes.somenteLeitura ? 'checked' : ''} />
+                <span>Serviços e Corte só leitura (vê apenas os concluídos, não lança nem edita — como o PCP)</span>
+              </label>
+            </div>`
+      }
 
       <div style="display:flex; gap:10px; margin-top:6px">
         <button class="btn btn--ghost" id="btn-cancelar-usuario" style="flex:1">Cancelar</button>
@@ -410,7 +446,22 @@ async function renderFormUsuario(cont, view) {
   document.getElementById('f-nome-u').addEventListener('input', (ev) => (fv.nome = ev.target.value));
   document.getElementById('f-login-u').addEventListener('input', (ev) => (fv.login = ev.target.value));
   document.getElementById('f-senha-u').addEventListener('input', (ev) => (fv.senha = ev.target.value));
-  document.getElementById('f-tipo-u').addEventListener('change', (ev) => (fv.tipo = ev.target.value));
+  document.getElementById('f-tipo-u').addEventListener('change', (ev) => {
+    fv.tipo = ev.target.value;
+    fv.permissoes = Permissoes.padraoDoTipo(fv.tipo);
+    renderFormUsuario(cont, view);
+  });
+  cont.querySelectorAll('[data-perm-aba]').forEach((chk) => {
+    chk.addEventListener('change', () => {
+      const id = chk.dataset.permAba;
+      const set = new Set(fv.permissoes.abas);
+      if (chk.checked) set.add(id);
+      else set.delete(id);
+      fv.permissoes.abas = Permissoes.ABAS.map((a) => a.id).filter((x) => set.has(x));
+    });
+  });
+  const chkLeitura = document.getElementById('f-perm-leitura');
+  if (chkLeitura) chkLeitura.addEventListener('change', () => (fv.permissoes.somenteLeitura = chkLeitura.checked));
 
   document.getElementById('f-foto').addEventListener('change', async (ev) => {
     const file = ev.target.files[0];
@@ -495,6 +546,8 @@ async function salvarUsuario(cont, view) {
   registro.login = login;
   registro.tipo = tipo;
   registro.foto = AdminView.fotoBase64 || null;
+  const perm = AdminView.formValues.permissoes || Permissoes.padraoDoTipo(tipo);
+  registro.permissoes = tipo === 'admin' ? null : { abas: [...perm.abas], somenteLeitura: !!perm.somenteLeitura };
   if (senha) {
     registro.senhaHash = await dbUtil.sha256(senha);
   }
@@ -894,6 +947,7 @@ async function fazerBackup() {
     'catalogo_itens',
     'categorias_servico',
     'produtos_mkt',
+    'materiais',
   ];
 
   const dados = { exportadoEm: Date.now() };

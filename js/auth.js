@@ -24,6 +24,7 @@ const Auth = {
       login: user.login,
       tipo: user.tipo,
       foto: user.foto || null,
+      permissoes: user.permissoes || null,
     };
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
     this.current = session;
@@ -36,6 +37,34 @@ const Auth = {
 
   isAdmin() {
     return !!this.current && this.current.tipo === 'admin';
+  },
+
+  // Recarrega nome/tipo/permissões do banco — assim, quando o Admin
+  // muda as permissões de alguém, vale na hora pra essa pessoa, sem
+  // precisar sair e entrar de novo. Retorna false se a conta sumiu.
+  async atualizarDoBanco() {
+    if (!this.current) return false;
+    try {
+      const user = await DB.get('usuarios', this.current.id);
+      if (!user) {
+        // só considera a conta excluída se a lista de usuários de fato
+        // carregou (sem internet na 1ª vez ela pode vir vazia)
+        const todos = await DB.getAll('usuarios');
+        return todos.length === 0;
+      }
+      this.saveSession(user);
+    } catch (e) {
+      console.error('Não consegui recarregar o usuário:', e);
+    }
+    return true;
+  },
+
+  pode(abaId) {
+    return Permissoes.podeVer(this.current, abaId);
+  },
+
+  somenteLeitura() {
+    return Permissoes.somenteLeitura(this.current);
   },
 
   async login(login, senha) {

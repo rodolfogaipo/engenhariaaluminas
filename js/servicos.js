@@ -28,7 +28,7 @@ async function renderServicos(view) {
 
 async function renderServicosLista(view) {
   const user = Auth.current;
-  const somenteLeitura = user.tipo === 'pcp';
+  const somenteLeitura = Auth.somenteLeitura();
   const ehAdmin = user.tipo === 'admin';
 
   view.innerHTML = `
@@ -54,7 +54,7 @@ async function renderServicosLista(view) {
     </div>
 
     <div class="field" style="margin-bottom:20px">
-      <input id="busca-servico" placeholder="Buscar por nome, tipo ou funcionário…" value="${escapeHtml(ServicosView.filtroTexto)}" />
+      <input id="busca-servico" placeholder="Buscar por nome, tipo, funcionário ou material…" value="${escapeHtml(ServicosView.filtroTexto)}" />
     </div>
 
     <div id="barra-selecao"></div>
@@ -142,7 +142,7 @@ async function atualizarListaServicos(view) {
   const visiveis =
     user.tipo === 'admin'
       ? todos
-      : user.tipo === 'pcp'
+      : Auth.somenteLeitura()
       ? todos.filter((s) => estadoServico(s) === 'concluido')
       : todos.filter((s) => servicoVisivelPara(s, user.id));
   const filtro = Const_normaliza(ServicosView.filtroTexto);
@@ -152,7 +152,9 @@ async function atualizarListaServicos(view) {
       return (
         Const_normaliza(s.nome).includes(filtro) ||
         Const_normaliza(s.tipo).includes(filtro) ||
-        Const_normaliza(s.funcionarioNome).includes(filtro)
+        Const_normaliza(s.funcionarioNome).includes(filtro) ||
+        Const_normaliza(s.materialNome).includes(filtro) ||
+        Const_normaliza(s.numeroPedido).includes(filtro)
       );
     })
     .sort((a, b) => {
@@ -268,6 +270,7 @@ async function atualizarListaServicos(view) {
                   ? `<div class="row__meta">Aproveitamento: ${s.percentualAproveitamento}% · Desperdício: ${(100 - s.percentualAproveitamento).toFixed(1)}%</div>`
                   : ''
               }
+              ${s.materialNome ? `<div class="row__meta">${escapeHtml(s.materialTipo || 'Material')}: <b>${escapeHtml(s.materialNome)}</b>${s.materialLargura != null ? ` · ${formatarLarguraMaterial(s.materialLargura)}` : ''}</div>` : ''}
               ${s.dataFinal ? `<div class="row__meta">Erros: ${s.erros || 0} · Erros novos: ${s.errosNovos || 0}</div>` : ''}
               ${s.observacoes ? `<div class="row__meta" style="font-style:italic">📝 ${escapeHtml(s.observacoes)}</div>` : ''}
               ${
@@ -480,6 +483,8 @@ function criarEstadoFormularioVazio() {
     dataInicioAdmin: '',
     dataFinalAdmin: '',
     anexos: [],
+    material: null, // { id, nome, tipo, largura } — só Corte Tecido/Tela/Couro
+    materialBusca: '',
     erro: '',
   };
 }
@@ -507,6 +512,11 @@ function criarEstadoFormularioEdicao(registro) {
     dataInicioAdmin: dataParaInputDate(registro.iniciadoEm),
     dataFinalAdmin: dataParaInputDate(registro.dataFinal),
     anexos: registro.anexos ? [...registro.anexos] : [],
+    tipoOriginal: registro.tipo,
+    material: registro.materialNome
+      ? { id: registro.materialId || null, nome: registro.materialNome, tipo: registro.materialTipo || null, largura: registro.materialLargura ?? null }
+      : null,
+    materialBusca: '',
     erro: '',
   };
 }
@@ -520,10 +530,12 @@ async function renderServicoForm(view) {
   categoriasCache = await Categorias.listar();
   const ehCadastro = !editando && !!Categorias.categoriaCadastroDe(categoriasCache, st.tipo);
   const ehCorteComAproveitamento = Categorias.temPorcentagem(categoriasCache, st.tipo);
+  const tipoMaterial = Materiais.tipoDaCategoria(st.tipo);
   const ehAdmin = Auth.isAdmin();
   if (ehAdmin) {
     funcionariosCache = await DB.getAll('usuarios'); // inclui o próprio Admin, pra ele poder se atribuir serviços e aparecer em "Minha Produção"
   }
+  const materiaisDisponiveis = tipoMaterial ? (await Materiais.listar()).filter((m) => m.tipo === tipoMaterial) : [];
 
   view.innerHTML = `
     <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px">
@@ -538,11 +550,12 @@ async function renderServicoForm(view) {
     <div class="card">
       <div class="field">
         <label for="f-tipo">Tipo de Serviço</label>
-        <select id="f-tipo" ${editando ? 'disabled' : ''}>
+        <select id="f-tipo">
           <option value="">Selecione…</option>
-          ${categoriasCache.map((c) => `<option value="${c.nome}" ${c.nome === st.tipo ? 'selected' : ''}>${c.nome}</option>`).join('')}
+          ${categoriasCache.map((c) => `<option value="${escapeHtml(c.nome)}" ${c.nome === st.tipo ? 'selected' : ''}>${escapeHtml(c.nome)}</option>`).join('')}
+          ${st.tipo && !categoriasCache.some((c) => c.nome === st.tipo) ? `<option value="${escapeHtml(st.tipo)}" selected>${escapeHtml(st.tipo)} (categoria excluída)</option>` : ''}
         </select>
-        ${editando ? '<div class="row__meta" style="margin-top:6px">O tipo não pode ser alterado depois de lançado.</div>' : ''}
+        ${editando && st.tipoOriginal && st.tipo !== st.tipoOriginal ? `<div class="row__meta" style="margin-top:6px">Tipo alterado de <b>${escapeHtml(st.tipoOriginal)}</b> para <b>${escapeHtml(st.tipo || '—')}</b> — vale ao salvar.</div>` : ''}
       </div>
 
       <div class="field">
@@ -551,6 +564,8 @@ async function renderServicoForm(view) {
       </div>
 
       <div id="bloco-nome"></div>
+
+      ${tipoMaterial ? '<div id="bloco-material"></div>' : ''}
 
       ${
         ehAdmin
@@ -624,7 +639,23 @@ async function renderServicoForm(view) {
   document.getElementById('btn-cancelar-servico').addEventListener('click', voltarParaLista);
 
   document.getElementById('f-tipo').addEventListener('change', (ev) => {
-    st.tipo = ev.target.value;
+    const novo = ev.target.value;
+    if (
+      editando &&
+      st.tipoOriginal === 'CNP' &&
+      novo !== 'CNP' &&
+      st.tipo === 'CNP' &&
+      !confirm('Essa CNP tem um registro ligado em Plano de Corte (aba Corte). Ao salvar com outro tipo, esse registro de corte será excluído. Continuar?')
+    ) {
+      ev.target.value = st.tipo;
+      return;
+    }
+    st.tipo = novo;
+    // material só existe em Corte Tecido/Tela/Couro — se trocou pra um
+    // tipo de material diferente, o escolhido antes não vale mais
+    const tipoMatNovo = Materiais.tipoDaCategoria(novo);
+    if (!tipoMatNovo || (st.material && st.material.tipo && st.material.tipo !== tipoMatNovo)) st.material = null;
+    st.materialBusca = '';
     st.catalogoSelecionado = null;
     st.catalogoMatches = [];
     renderServicoForm(view);
@@ -673,6 +704,7 @@ async function renderServicoForm(view) {
   }
 
   renderBlocoNome(view, ehCadastro);
+  if (tipoMaterial) renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis);
 
   document.getElementById('btn-salvar-servico').addEventListener('click', () => salvarServicoComTratamentoDeErro(view));
 }
@@ -723,6 +755,104 @@ function voltarParaLista() {
   ServicosView.subView = 'lista';
   ServicosView.formState = null;
   renderView('servicos');
+}
+
+/* ---------------- MATERIAL (Corte Tecido / Tela / Couro) ----------------
+   Escolhe da lista cadastrada na aba Materiais — a largura vem junto,
+   só como referência. Evita erro de digitação / dúvida de qual
+   material foi usado. */
+
+function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
+  const st = ServicosView.formState;
+  const bloco = document.getElementById('bloco-material');
+  if (!bloco) return;
+
+  if (st.material) {
+    const m = st.material;
+    const aindaExiste = !m.id || materiaisDisponiveis.some((x) => x.id === m.id);
+    bloco.innerHTML = `
+      <div class="field">
+        <label>${escapeHtml(tipoMaterial)} usado</label>
+        <div class="card" style="background:var(--brand-100); border-color:var(--brand-500); padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
+          <div style="min-width:0">
+            <div class="row__title" style="color:var(--brand-800)">${escapeHtml(m.nome)}</div>
+            <div class="row__meta">Largura: <b>${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</b>${aindaExiste ? '' : ' · não está mais na lista de Materiais'}</div>
+          </div>
+          <button class="btn btn--ghost" id="btn-trocar-material" style="padding:6px 12px; font-size:13px">Trocar</button>
+        </div>
+      </div>
+    `;
+    document.getElementById('btn-trocar-material').addEventListener('click', () => {
+      st.material = null;
+      st.materialBusca = '';
+      renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis);
+      const inp = document.getElementById('f-material-busca');
+      if (inp) inp.focus();
+    });
+    return;
+  }
+
+  if (materiaisDisponiveis.length === 0) {
+    bloco.innerHTML = `
+      <div class="field">
+        <label>${escapeHtml(tipoMaterial)} usado (opcional)</label>
+        <div class="row__meta">Nenhum ${escapeHtml(tipoMaterial.toLowerCase())} cadastrado ainda. ${
+          Auth.isAdmin() ? 'Cadastre na aba Materiais.' : 'Peça ao administrador para cadastrar na aba Materiais.'
+        }</div>
+      </div>`;
+    return;
+  }
+
+  bloco.innerHTML = `
+    <div class="field">
+      <label for="f-material-busca">${escapeHtml(tipoMaterial)} usado (opcional)</label>
+      <input id="f-material-busca" value="${escapeHtml(st.materialBusca)}" placeholder="Buscar ${escapeHtml(tipoMaterial.toLowerCase())} pelo nome…" autocomplete="off" />
+      <div id="material-resultados" style="margin-top:8px"></div>
+    </div>
+  `;
+
+  const input = document.getElementById('f-material-busca');
+  const desenharResultados = () => {
+    const cont = document.getElementById('material-resultados');
+    if (!cont) return;
+    const alvo = normalizaBuscaMaterial(st.materialBusca);
+    const lista = materiaisDisponiveis.filter((m) => !alvo || normalizaBuscaMaterial(m.nome).includes(alvo)).slice(0, 8);
+    if (lista.length === 0) {
+      cont.innerHTML = `<div class="row__meta">Nenhum ${escapeHtml(tipoMaterial.toLowerCase())} com esse nome na lista.</div>`;
+      return;
+    }
+    cont.innerHTML = `
+      <div class="card" style="padding:4px 0">
+        ${lista
+          .map(
+            (m) => `
+          <div class="row" style="padding:8px 14px">
+            <div class="row__main">
+              <div class="row__title" style="font-size:14px">${escapeHtml(m.nome)}</div>
+              <div class="row__meta">Largura: ${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</div>
+            </div>
+            <button class="btn btn--ghost" data-escolher-material="${m.id}" style="padding:6px 12px; font-size:13px">Usar</button>
+          </div>`
+          )
+          .join('')}
+      </div>
+      ${materiaisDisponiveis.length > lista.length && !alvo ? `<div class="row__meta" style="margin-top:6px">Mostrando ${lista.length} de ${materiaisDisponiveis.length} — digite pra filtrar.</div>` : ''}
+    `;
+    cont.querySelectorAll('[data-escolher-material]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const m = materiaisDisponiveis.find((x) => x.id === btn.dataset.escolherMaterial);
+        if (!m) return;
+        st.material = { id: m.id, nome: m.nome, tipo: m.tipo, largura: m.largura ?? null };
+        st.materialBusca = '';
+        renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis);
+      });
+    });
+  };
+  input.addEventListener('input', () => {
+    st.materialBusca = input.value;
+    desenharResultados();
+  });
+  desenharResultados();
 }
 
 let buscaCatalogoTimer = null;
@@ -917,11 +1047,15 @@ async function salvarServico(view) {
       voltarParaLista();
       return;
     }
+    const tipoAnterior = registro.tipo;
+    registro.tipo = st.tipo;
     registro.numeroPedido = st.numeroPedido || '';
     registro.nome = nomeFinal;
     registro.dataProgramada = st.dataProgramada ? Const.inputDateParaTimestamp(st.dataProgramada) : null;
     registro.observacoes = st.observacoes || '';
-    if (ehCorte) registro.percentualAproveitamento = percentual;
+    // tipo sem % de aproveitamento não guarda % (ex: trocou de Corte Tecido pra CNP)
+    registro.percentualAproveitamento = ehCorte ? percentual : null;
+    aplicarMaterialNoRegistro(registro, st);
     if (user.tipo === 'admin') registro.anexos = st.anexos;
 
     if (user.tipo === 'admin') {
@@ -959,6 +1093,7 @@ async function salvarServico(view) {
 
     await DB.put('servicos', registro);
     if (registro.tipo === 'CNP') await sincronizarPlanoCorteComCNP(registro);
+    else if (tipoAnterior === 'CNP') await excluirPlanoCorteLigado(registro.id); // deixou de ser CNP
     voltarParaLista();
     return;
   }
@@ -1019,10 +1154,26 @@ async function salvarServico(view) {
     dataAprovacao: user.tipo === 'admin' ? Date.now() : null,
     criadoEm: Date.now(),
   };
+  aplicarMaterialNoRegistro(registro, st);
 
   await DB.put('servicos', registro);
   if (registro.tipo === 'CNP') await criarPlanoCorteParaCNP(registro);
   voltarParaLista();
+}
+
+function aplicarMaterialNoRegistro(registro, st) {
+  const usaMaterial = !!Materiais.tipoDaCategoria(registro.tipo);
+  if (usaMaterial && st.material) {
+    registro.materialId = st.material.id || null;
+    registro.materialNome = st.material.nome;
+    registro.materialTipo = st.material.tipo || Materiais.tipoDaCategoria(registro.tipo);
+    registro.materialLargura = st.material.largura ?? null;
+  } else {
+    registro.materialId = null;
+    registro.materialNome = null;
+    registro.materialTipo = null;
+    registro.materialLargura = null;
+  }
 }
 
 /* ---------------- integração CNP → Plano de Corte ----------------

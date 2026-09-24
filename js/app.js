@@ -15,38 +15,39 @@ const ICONS = {
   ferias: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 22h20"/><path d="M12 22V12"/><path d="M12 12c0-5 3-9 8-9 0 5-3 9-8 9Z"/><path d="M12 15c0-3.5-2.5-6.5-6-7 0 3.5 2.5 6.5 6 7Z"/></svg>',
   mkt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="1"/><path d="M7 7V5M7 19v-2M12 7V5M12 19v-2M17 7V5M17 19v-2"/></svg>',
   admin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.36.4.66.73.85.3.18.66.27 1.02.24H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>',
+  materiais: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6c0-1.1 3.6-2 8-2s8 .9 8 2v12c0 1.1-3.6 2-8 2s-8-.9-8-2V6Z"/><path d="M4 6c0 1.1 3.6 2 8 2s8-.9 8-2"/><path d="M4 12c0 1.1 3.6 2 8 2s8-.9 8-2"/></svg>',
+  raiox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/><path d="M9 8h6M12 5v6"/></svg>',
+  relatorio: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z"/><path d="M14 3v6h6"/><path d="M8 17v-3M12 17v-6M16 17v-2"/></svg>',
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
   wip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z"/></svg>',
 };
 
-const TABS_BASE = [
-  { id: 'dashboard', label: 'Início', icon: ICONS.dashboard },
-  { id: 'servicos', label: 'Serviços', icon: ICONS.servicos },
-  { id: 'corte', label: 'Corte', icon: ICONS.corte },
-  { id: 'avisos', label: 'Avisos', icon: ICONS.avisos },
-  { id: 'ferias', label: 'Férias', icon: ICONS.ferias },
-  { id: 'mkt', label: 'MKT', icon: ICONS.mkt },
-  { id: 'treino', label: 'Treino', icon: ICONS.treino },
-];
+const TAB_DEFS = {
+  dashboard: { id: 'dashboard', label: 'Início', icon: ICONS.dashboard },
+  servicos: { id: 'servicos', label: 'Serviços', icon: ICONS.servicos },
+  corte: { id: 'corte', label: 'Corte', icon: ICONS.corte },
+  avisos: { id: 'avisos', label: 'Avisos', icon: ICONS.avisos },
+  ferias: { id: 'ferias', label: 'Férias', icon: ICONS.ferias },
+  mkt: { id: 'mkt', label: 'MKT', icon: ICONS.mkt },
+  treino: { id: 'treino', label: 'Treino', icon: ICONS.treino },
+  materiais: { id: 'materiais', label: 'Materiais', icon: ICONS.materiais },
+  raiox: { id: 'raiox', label: 'Raio-X', icon: ICONS.raiox },
+  relatorio: { id: 'relatorio', label: 'Relatório', icon: ICONS.relatorio },
+  admin: { id: 'admin', label: 'Admin', icon: ICONS.admin },
+};
 
-const TABS_PCP = [
-  { id: 'servicos', label: 'Serviços', icon: ICONS.servicos },
-  { id: 'corte', label: 'Corte', icon: ICONS.corte },
-  { id: 'mkt', label: 'MKT', icon: ICONS.mkt },
-];
-
-const TABS_MKT = [{ id: 'mkt', label: 'MKT', icon: ICONS.mkt }];
+// ordem fixa do menu — cada pessoa só vê as abas que tem permissão
+const ORDEM_ABAS = ['dashboard', 'servicos', 'corte', 'avisos', 'ferias', 'mkt', 'treino', 'materiais', 'raiox', 'relatorio', 'admin'];
 
 function currentTabs() {
-  const tipo = Auth.current?.tipo;
-  if (tipo === 'pcp') return TABS_PCP;
-  if (tipo === 'mkt') return TABS_MKT;
+  const permitidas = Permissoes.doUsuario(Auth.current).abas;
+  return ORDEM_ABAS.filter((id) => permitidas.includes(id)).map((id) => TAB_DEFS[id]);
+}
 
-  const tabs = [...TABS_BASE];
-  if (Auth.isAdmin()) {
-    tabs.push({ id: 'admin', label: 'Admin', icon: ICONS.admin });
-  }
-  return tabs;
+function garantirAbaPermitida() {
+  const tabs = currentTabs();
+  if (tabs.length === 0) return;
+  if (!tabs.some((t) => t.id === activeTab)) activeTab = tabs[0].id;
 }
 
 let activeTab = 'dashboard';
@@ -99,8 +100,7 @@ function renderLogin(root, errorMsg) {
 
 function renderShell(root) {
   const user = Auth.current;
-  if (user.tipo === 'pcp' && activeTab === 'dashboard') activeTab = 'servicos';
-  if (user.tipo === 'mkt') activeTab = 'mkt';
+  garantirAbaPermitida();
   root.innerHTML = `
     <div id="app-shell">
       <header class="topbar">
@@ -136,7 +136,16 @@ function renderShell(root) {
     const emCampoDeForm = el && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
     if (emCampoDeForm) return; // não atualiza enquanto a pessoa está preenchendo algo
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
+    debounceTimer = setTimeout(async () => {
+      // permissões podem ter mudado (o Admin editou essa pessoa)
+      const aindaExiste = await Auth.atualizarDoBanco();
+      if (!aindaExiste) {
+        window.aoDadosMudarem = () => {};
+        Auth.logout();
+        renderLogin(document.getElementById('root'));
+        return;
+      }
+      garantirAbaPermitida();
       renderView(activeTab);
       renderTabbar();
     }, 250);
@@ -166,6 +175,9 @@ function renderTabbar() {
       renderView(activeTab);
     });
   });
+
+  const ativo = tabbar.querySelector('.tabbar__item.active');
+  if (ativo && ativo.scrollIntoView) ativo.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 
   atualizarBadgesTabbar();
 }
@@ -209,8 +221,22 @@ async function renderView(tab) {
   const view = document.getElementById('view');
   if (!view) return;
 
+  // nunca abre uma aba sem permissão (ex: link antigo em memória)
+  if (!currentTabs().some((t) => t.id === tab)) {
+    garantirAbaPermitida();
+    if (activeTab === tab || !currentTabs().some((t) => t.id === activeTab)) {
+      view.innerHTML = `<div class="card"><div class="empty"><div class="empty__title">Nenhuma aba liberada</div><div class="empty__sub">Peça ao administrador para liberar o acesso.</div></div></div>`;
+      return;
+    }
+    tab = activeTab;
+    renderTabbar();
+  }
+
   if (tab === 'dashboard') return renderDashboard(view);
   if (tab === 'admin' && Auth.isAdmin()) return renderAdmin(view);
+  if (tab === 'materiais') return renderMateriais(view);
+  if (tab === 'raiox') return renderRaioX(view);
+  if (tab === 'relatorio' && Auth.isAdmin()) return renderRelatorio(view);
   if (tab === 'servicos') return renderServicos(view);
   if (tab === 'corte') return renderCorte(view);
   if (tab === 'avisos') return renderAvisos(view);
@@ -247,6 +273,12 @@ async function boot() {
   Auth.loadSession();
 
   if (Auth.current) {
+    const aindaExiste = await Auth.atualizarDoBanco();
+    if (!aindaExiste) {
+      Auth.logout();
+      renderLogin(root);
+      return;
+    }
     renderShell(root);
   } else {
     renderLogin(root);
