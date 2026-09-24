@@ -757,3 +757,10 @@ a { color: var(--brand-700); }
   padding-top: 1.8mm;
   border-bottom: 0.4mm solid var(--brand-500);
 }
+
+/* Relatório — barras de aproveitamento em linhas (quebram de folha sem cortar) */
+.rp-barras td { vertical-align: middle; background: var(--surface) !important; border-bottom: 0.25mm solid var(--line); }
+.rp-barras th { background: var(--surface-sunken) !important; color: var(--ink-soft) !important; font-weight: 600; border-bottom: 0.4mm solid var(--line); }
+.rp-barras__rot { width: 42%; font-size: 8.5pt; line-height: 1.25; }
+.rp-barras__barra { width: 40%; }
+.rp-barras__val { width: 9%; font-weight: 600; }

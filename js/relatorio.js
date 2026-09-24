@@ -24,7 +24,6 @@ const RelatorioView = {
   categoria: '',
   material: '',
   nome: '',
-  agrupamento: 'movel', // 'movel' | 'categoria'
   // o que entra no PDF
   incluirResumo: true,
   incluirEvolucao: true,
@@ -131,7 +130,9 @@ async function renderRelatorioFiltros(cont) {
     new Set([...(await Materiais.listar()).map((m) => m.nome), ...d.itensTodos.map((i) => i.materialNome).filter(Boolean)])
   ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
-  const grupos = Analise.aproveitamentoAgrupado(d.finais, st.agrupamento);
+  const modoItem = !!(st.nome && st.nome.trim());
+  const grupos = Analise.aproveitamentoAgrupado(d.finais, 'categoria');
+  const itensComAprov = d.finais.filter((i) => i.aproveitamento != null);
 
   cont.innerHTML = `
     <div class="card">
@@ -200,14 +201,18 @@ async function renderRelatorioFiltros(cont) {
 
     <div class="card">
       <h3 class="section-title" style="font-size:16px">Aproveitamento e desperdício</h3>
-      <p class="section-sub" style="margin-bottom:10px">Como agrupar no relatório</p>
-      <div class="chips">
-        <button class="chip ${st.agrupamento === 'movel' ? 'chip--on' : ''}" data-rel-agrup="movel">Por móvel</button>
-        <button class="chip ${st.agrupamento === 'categoria' ? 'chip--on' : ''}" data-rel-agrup="categoria">Por categoria</button>
-      </div>
-      <div class="row__meta" style="margin-top:10px">${
-        grupos.length
-          ? `${grupos.length} ${st.agrupamento === 'movel' ? 'móvel(is)' : 'categoria(s)'} com % de aproveitamento nos itens escolhidos.`
+      <p class="section-sub" style="margin-bottom:6px">${
+        modoItem
+          ? `Item por item — filtrado pelo nome "${escapeHtml(st.nome.trim())}"`
+          : 'Por categoria (Corte Tecido, Corte Tela, Corte Espuma…)'
+      }</p>
+      <div class="row__meta">${
+        modoItem
+          ? itensComAprov.length
+            ? `${itensComAprov.length} item(ns) com % de aproveitamento. Cada um aparece na sua linha, com a categoria — o mesmo móvel com tela e tecido sai separado.`
+            : 'Nenhum item com % de aproveitamento nesse filtro — essa parte não aparece no relatório.'
+          : grupos.length
+          ? `${grupos.length} categoria(s) com % de aproveitamento. Pra ver um móvel específico item por item, digite o nome em "Nome do móvel contém".`
           : 'Nenhum item com % de aproveitamento nos itens escolhidos — essa parte não aparece no relatório.'
       }</div>
     </div>
@@ -344,9 +349,6 @@ async function renderRelatorioFiltros(cont) {
     if (ev.key === 'Enter') nomeInput.blur();
   });
 
-  cont.querySelectorAll('[data-rel-agrup]').forEach((btn) =>
-    btn.addEventListener('click', () => ((st.agrupamento = btn.dataset.relAgrup), rerender()))
-  );
   cont.querySelectorAll('[data-rel-incluir]').forEach((chk) =>
     chk.addEventListener('change', () => {
       st[chk.dataset.relIncluir] = chk.checked;
@@ -641,42 +643,75 @@ async function montarPaginasRelatorio(d) {
   );
   } // fim Prazo
 
-  /* 4. Aproveitamento / Desperdício */
-  const grupos = Analise.aproveitamentoAgrupado(finais, st.agrupamento);
-  if (st.incluirAproveitamento && grupos.length) {
-    const rotuloAgr = st.agrupamento === 'movel' ? 'por móvel' : 'por categoria';
-    secao(`Aproveitamento e desperdício ${rotuloAgr}`, 'Média do % de aproveitamento informado pelo programa de corte. Desperdício = 100% − aproveitamento.');
-    const topo = grupos.slice(0, 15);
-    html(`<div class="rp-grafico">${barrasHorizontaisSVG(
-      topo.map((g) => ({ rotulo: g.grupo, valor: g.media, textoValor: `${formatarPct(g.media)} (${g.qtd})` })),
-      { maximo: 100, colRotulo: 200, largura: 640, maxLargura: 680 }
-    )}</div>`);
+  /* 4. Aproveitamento / Desperdício
+     - sem nome digitado: por categoria (visão geral)
+     - com nome digitado (ex: MARROCOS): item por item, com a categoria
+       de cada um — o mesmo móvel com tela e tecido sai separado.
+     O "gráfico" é montado em linhas de tabela, assim ele continua na
+     folha seguinte quando for grande, em vez de ser cortado. */
+  const modoItem = !!(st.nome && st.nome.trim());
+  const grupos = Analise.aproveitamentoAgrupado(finais, 'categoria');
+  const itensComAprov = finais
+    .filter((i) => i.aproveitamento != null)
+    .sort(
+      (a, b) =>
+        (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { numeric: true }) ||
+        (a.categoria || '').localeCompare(b.categoria || '', 'pt-BR') ||
+        a.dataFinal - b.dataFinal
+    );
+  const linhaBarra = (rotulo, sub, valor) =>
+    `<tr>
+      <td class="rp-barras__rot">${escapeHtml(rotulo)}${sub ? `<div class="rp-fraco">${escapeHtml(sub)}</div>` : ''}</td>
+      <td class="rp-barras__barra">${barraHorizontalSVG(valor, 100, '#7A1F2B')}</td>
+      <td class="num rp-barras__val">${formatarPct(valor)}</td>
+      <td class="num rp-barras__val rp-fraco">${formatarPct(100 - valor)}</td>
+    </tr>`;
+  const cabecalhoBarras = '<tr><th></th><th>Aproveitamento (barra) · desperdício (fundo)</th><th class="num">Aprov.</th><th class="num">Desp.</th></tr>';
+
+  if (st.incluirAproveitamento && !modoItem && grupos.length) {
+    secao('Aproveitamento e desperdício por categoria', 'Média do % de aproveitamento informado pelo programa de corte. Desperdício = 100% − aproveitamento.');
     tabela(
-      `<tr><th>${st.agrupamento === 'movel' ? 'Móvel' : 'Categoria'}</th><th class="num">Itens</th><th class="num">Aproveitamento</th><th class="num">Desperdício</th><th class="num">Mín.</th><th class="num">Máx.</th></tr>`,
+      cabecalhoBarras,
+      grupos.map((g) => linhaBarra(g.grupo, `${g.qtd} item(ns)`, g.media)),
+      'rp-barras'
+    );
+    tabela(
+      `<tr><th>Categoria</th><th class="num">Itens</th><th class="num">Aproveitamento</th><th class="num">Desperdício</th><th class="num">Mín.</th><th class="num">Máx.</th></tr>`,
       grupos.map(
         (g) =>
           `<tr><td>${escapeHtml(g.grupo)}</td><td class="num">${g.qtd}</td><td class="num">${formatarPct(g.media)}</td><td class="num">${formatarPct(g.desperdicio)}</td><td class="num">${formatarPct(g.min)}</td><td class="num">${formatarPct(g.max)}</td></tr>`
       )
     );
+  }
 
-    // cruzado com o tempo: média de aproveitamento dos maiores grupos em cada faixa
-    const principais = grupos.slice(0, 4).map((g) => g.grupo);
-    const chaveDe = (i) => (st.agrupamento === 'categoria' ? i.categoria : (i.nome || '(sem nome)').trim().toUpperCase());
+  if (st.incluirAproveitamento && modoItem && itensComAprov.length) {
+    secao(
+      `Aproveitamento e desperdício — item por item`,
+      `Filtrado pelo nome "${st.nome.trim()}". Cada corte na sua linha, com a categoria e a data.`
+    );
+    tabela(
+      cabecalhoBarras,
+      itensComAprov.map((i) => linhaBarra(i.nome || '(sem nome)', `${i.categoria} · ${formatarDataCurta(i.dataFinal)}${i.materialNome ? ` · ${i.materialNome}` : ''}`, i.aproveitamento)),
+      'rp-barras'
+    );
+  }
+
+  // ao longo do tempo: média de cada categoria (dos itens filtrados) em cada faixa da Evolução
+  if (st.incluirAproveitamento && (modoItem ? itensComAprov.length : grupos.length)) {
+    const principais = grupos.slice(0, 6).map((g) => g.grupo);
     const comAprovTempo = baseEvolucao.filter((i) => i.aproveitamento != null);
     const series = principais.map((g, gi) => ({
       nome: g,
       cor: corDaSerie(gi),
       valores: faixas.map((f) => {
-        const it = comAprovTempo.filter((i) => chaveDe(i) === g && i.dataFinal >= f.inicio && i.dataFinal < f.fim);
+        const it = comAprovTempo.filter((i) => i.categoria === g && i.dataFinal >= f.inicio && i.dataFinal < f.fim);
         return it.length ? Math.round((it.reduce((s, i) => s + i.aproveitamento, 0) / it.length) * 10) / 10 : null;
       }),
     }));
-    if (series.some((s) => s.valores.filter((v) => v != null).length >= 1)) {
-      html(`<div class="rp-grafico"><div class="rp-grafico__titulo">Aproveitamento médio ao longo do tempo (${rotuloAgr})</div>${graficoLinhaSVG(
-        faixas.map((f) => f.rotulo),
-        series,
-        { sufixo: '%', minMaximo: 100, altura: 180, largura: 640 }
-      )}</div>`);
+    if (series.some((s) => s.valores.some((v) => v != null))) {
+      html(`<div class="rp-grafico"><div class="rp-grafico__titulo">Aproveitamento médio por categoria ao longo do tempo (${
+        st.evolucaoTipo === 'mensal' ? 'por mês' : 'por semana'
+      })</div>${graficoLinhaSVG(faixas.map((f) => f.rotulo), series, { sufixo: '%', minMaximo: 100, altura: 180, largura: 640 })}</div>`);
     }
   }
 
