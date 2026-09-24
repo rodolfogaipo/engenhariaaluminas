@@ -153,7 +153,8 @@ async function renderRelatorioFiltros(cont) {
             ? `<div style="display:flex; gap:8px; flex-wrap:wrap">
                 <div class="field" style="margin:0"><input id="rel-ini" type="date" value="${escapeHtml(st.inicioStr)}" aria-label="Data inicial" /></div>
                 <div class="field" style="margin:0"><input id="rel-fim" type="date" value="${escapeHtml(st.fimStr)}" aria-label="Data final" /></div>
-              </div>`
+              </div>
+              <div class="row__meta" style="flex-basis:100%; text-align:right">Digite ou escolha as datas — o filtro é aplicado ao sair do campo ou apertar Enter.</div>`
             : `<div style="display:flex; align-items:center; gap:10px">
                 <button class="topbar__icon-btn" id="rel-anterior" style="background:var(--paper-dim)" aria-label="Período anterior">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M15 18l-6-6 6-6"/></svg>
@@ -335,10 +336,32 @@ async function renderRelatorioFiltros(cont) {
   if (ant) ant.addEventListener('click', () => ((st.dataReferencia = Analise.navegar(st.periodoTipo, st.dataReferencia, -1)), (st.status = ''), rerender()));
   const prox = document.getElementById('rel-proximo');
   if (prox) prox.addEventListener('click', () => ((st.dataReferencia = Analise.navegar(st.periodoTipo, st.dataReferencia, 1)), (st.status = ''), rerender()));
-  const ini = document.getElementById('rel-ini');
-  if (ini) ini.addEventListener('change', () => ((st.inicioStr = ini.value), rerender()));
-  const fim = document.getElementById('rel-fim');
-  if (fim) fim.addEventListener('change', () => ((st.fimStr = fim.value), rerender()));
+  // Datas digitadas à mão: o campo de data avisa "mudou" a cada número
+  // digitado, e redesenhar a tela nessa hora tirava o cursor do campo.
+  // Então só guarda o valor enquanto digita e aplica o filtro quando a
+  // pessoa sai do campo (ou aperta Enter).
+  const ligarCampoData = (el, chave) => {
+    if (!el) return;
+    const guardar = () => (st[chave] = el.value);
+    el.addEventListener('input', guardar);
+    el.addEventListener('change', guardar);
+    el.addEventListener('blur', () => {
+      guardar();
+      // espera o foco assentar: se a pessoa só pulou pro outro campo de
+      // data, ainda não aplica (senão o cursor sairia desse também)
+      setTimeout(() => {
+        const ativo = document.activeElement;
+        if (ativo && (ativo.id === 'rel-ini' || ativo.id === 'rel-fim')) return;
+        if (RelatorioView._datasAplicadas !== `${st.inicioStr}|${st.fimStr}`) rerender();
+      }, 0);
+    });
+    el.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') el.blur();
+    });
+  };
+  RelatorioView._datasAplicadas = `${st.inicioStr}|${st.fimStr}`;
+  ligarCampoData(document.getElementById('rel-ini'), 'inicioStr');
+  ligarCampoData(document.getElementById('rel-fim'), 'fimStr');
 
   document.getElementById('rel-func').addEventListener('change', (ev) => ((st.funcionarioId = ev.target.value), rerender()));
   document.getElementById('rel-cat').addEventListener('change', (ev) => ((st.categoria = ev.target.value), rerender()));
