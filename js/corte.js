@@ -272,15 +272,11 @@ async function renderCorteForm(view) {
       imagensInput.disabled = true;
       document.getElementById('btn-salvar-corte').disabled = true;
       const cont = document.getElementById('lista-imagens-corte');
-      for (const arquivo of arquivos) {
-        cont.innerHTML = `<div class="row__meta">Enviando "${escapeHtml(arquivo.name)}" pro Google Drive… aguarde antes de Salvar</div>`;
-        try {
-          const img = await Drive.enviarArquivo(arquivo);
-          st.imagens.push(img);
-        } catch (e) {
-          st.erro = `Não consegui enviar "${arquivo.name}": ${e.message}`;
-        }
-      }
+      const { enviados, erros } = await Drive.enviarVarios(arquivos, (feitos, total) => {
+        if (cont) cont.innerHTML = `<div class="row__meta">Enviando pro Google Drive: ${feitos} de ${total} pronto(s)… aguarde antes de Salvar</div>`;
+      });
+      st.imagens.push(...enviados);
+      if (erros.length) st.erro = erros.map((e) => `Não consegui enviar "${e.nome}": ${e.mensagem}`).join(' ');
       imagensInput.value = '';
       imagensInput.disabled = false;
       renderCorteForm(view);

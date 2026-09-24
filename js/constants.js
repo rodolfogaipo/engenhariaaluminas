@@ -33,6 +33,19 @@ function rotuloTipoUsuario(tipo) {
   return 'Funcionário';
 }
 
+/* Foto redonda do usuário (ou a inicial do nome, se não tiver foto) —
+   usada ao lado do nome da pessoa em todo o app */
+function avatarUsuario(u, px = 28) {
+  const nome = (u && u.nome) || '?';
+  const estilo = `width:${px}px; height:${px}px; border-radius:50%; overflow:hidden; flex:0 0 auto; background:var(--paper-dim); display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:${Math.round(px * 0.42)}px; color:var(--brand-700); vertical-align:middle; box-shadow:0 0 0 1px var(--line)`;
+  if (u && u.foto) {
+    return `<span class="avatar" style="${estilo}"><img src="${u.foto}" alt="" style="width:100%; height:100%; object-fit:cover" /></span>`;
+  }
+  const inicial = nome.trim().charAt(0).toUpperCase() || '?';
+  const seguro = inicial.replace(/[&<>"]/g, '');
+  return `<span class="avatar" style="${estilo}">${seguro}</span>`;
+}
+
 window.Const = {
   formatarData,
   formatarDataHora,

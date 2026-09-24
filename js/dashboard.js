@@ -413,7 +413,7 @@ async function renderDashboardEquipeConteudo(cont) {
           return `
           <div class="row" style="padding:14px 18px; align-items:flex-start; flex-wrap:wrap; gap:10px">
             <div class="row__main" style="flex:1 1 200px">
-              <div class="row__title">${posicao} ${escapeHtml(l.usuario.nome)}</div>
+              <div class="row__title" style="display:flex; align-items:center; gap:10px">${avatarUsuario(l.usuario, 34)}<span>${posicao} ${escapeHtml(l.usuario.nome)}</span></div>
               ${
                 l.emFerias
                   ? '<div class="row__meta">🏖️ De férias neste período</div>'

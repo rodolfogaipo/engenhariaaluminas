@@ -52,37 +52,77 @@ function tipoDoArquivo(mime) {
   return 'pdf';
 }
 
+/* Foto de celular costuma vir com 3–8 MB e 4000px — muito mais do que
+   precisa pra ver no app ou imprimir. Antes de enviar, reduz pra no
+   máximo 2000px no lado maior (JPEG 85%): fica com poucas centenas de
+   KB, sobe várias vezes mais rápido e continua nítida. GIF/SVG e
+   imagens já pequenas vão como estão. */
+const LADO_MAX_FOTO = 1600; // nítido na tela e na ficha impressa, e sobe bem mais rápido
+
+async function comprimirImagemSeCompensar(file) {
+  const tipo = file.type || '';
+  if (!tipo.startsWith('image/') || tipo === 'image/gif' || tipo === 'image/svg+xml') return file;
+  if (file.size < 250 * 1024) return file;
+  try {
+    let fonte;
+    let largura;
+    let altura;
+    if (window.createImageBitmap) {
+      // imageOrientation: foto tirada de lado no celular não fica deitada
+      fonte = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      largura = fonte.width;
+      altura = fonte.height;
+    } else {
+      fonte = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = URL.createObjectURL(file);
+      });
+      largura = fonte.naturalWidth;
+      altura = fonte.naturalHeight;
+    }
+    const escala = Math.min(1, LADO_MAX_FOTO / Math.max(largura, altura));
+    const w = Math.round(largura * escala);
+    const h = Math.round(altura * escala);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; // PNG com fundo transparente não fica preto no JPEG
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(fonte, 0, 0, w, h);
+    if (fonte.close) fonte.close();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+    if (!blob || blob.size >= file.size) return file; // não compensou: manda o original
+    const nome = file.name.replace(/\.[^.]+$/, '') + '.jpg';
+    return new File([blob], nome, { type: 'image/jpeg', lastModified: Date.now() });
+  } catch (e) {
+    return file; // qualquer problema na redução: manda o original, nunca trava
+  }
+}
+
 const Drive = {
   async conectar() {
     await obterTokenDrive();
   },
 
-  async enviarArquivo(file) {
-    if (file.size > TAMANHO_MAX_DRIVE) {
+  async enviarArquivo(fileOriginal) {
+    if (fileOriginal.size > TAMANHO_MAX_DRIVE) {
       throw new Error('Arquivo maior que 200MB.');
     }
-    const token = await obterTokenDrive();
+    const [token, file] = await Promise.all([obterTokenDrive(), comprimirImagemSeCompensar(fileOriginal)]);
 
-    const base64Data = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(',')[1]);
-      reader.onerror = () => reject(new Error('Falha ao ler o arquivo.'));
-      reader.readAsDataURL(file);
-    });
-
-    const boundary = 'engaluminas' + Date.now();
-    const delimiter = `\r\n--${boundary}\r\n`;
-    const closeDelim = `\r\n--${boundary}--`;
+    // Envia o arquivo em binário, direto (antes era convertido pra texto
+    // base64, que deixa tudo 33% maior e trava o celular em vídeos)
+    const boundary = 'engaluminas' + Date.now() + Math.random().toString(36).slice(2, 8);
     const metadata = { name: file.name, mimeType: file.type || 'application/octet-stream' };
-
-    const body =
-      delimiter +
-      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-      JSON.stringify(metadata) +
-      delimiter +
-      `Content-Type: ${metadata.mimeType}\r\nContent-Transfer-Encoding: base64\r\n\r\n` +
-      base64Data +
-      closeDelim;
+    const body = new Blob([
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`,
+      `--${boundary}\r\nContent-Type: ${metadata.mimeType}\r\n\r\n`,
+      file,
+      `\r\n--${boundary}--`,
+    ]);
 
     const resp = await fetch(
       'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,size',
@@ -115,6 +155,35 @@ const Drive = {
       linkImagem: `https://lh3.googleusercontent.com/d/${arquivo.id}`,
       criadoEm: Date.now(),
     };
+  },
+
+  /* Envia vários de uma vez (4 em paralelo), mantendo a ordem escolhida.
+     onProgresso(feitos, total) é chamado a cada arquivo concluído.
+     Retorna { enviados: [...na ordem], erros: [{ nome, mensagem }] }. */
+  async enviarVarios(arquivos, onProgresso, emParalelo = 4) {
+    const lista = Array.from(arquivos || []);
+    const resultados = new Array(lista.length).fill(null);
+    const erros = [];
+    let proximo = 0;
+    let feitos = 0;
+    if (lista.length) {
+      await obterTokenDrive(); // pede a autorização uma vez só, antes de abrir os envios
+      onProgresso?.(0, lista.length);
+    }
+    const trabalhador = async () => {
+      while (proximo < lista.length) {
+        const i = proximo++;
+        try {
+          resultados[i] = await this.enviarArquivo(lista[i]);
+        } catch (e) {
+          erros.push({ nome: lista[i].name, mensagem: e && e.message ? e.message : 'erro desconhecido' });
+        }
+        feitos++;
+        onProgresso?.(feitos, lista.length);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(emParalelo, lista.length) }, trabalhador));
+    return { enviados: resultados.filter(Boolean), erros };
   },
 
   async excluirArquivo(driveId) {

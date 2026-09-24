@@ -106,6 +106,7 @@ function renderShell(root) {
       <header class="topbar">
         <div class="topbar__mark"><img src="icons/icon-192.png" alt=""></div>
         <div class="topbar__title">Engenharia Aluminas</div>
+        ${avatarUsuario(user, 32)}
         <div class="topbar__user">
           <b>${escapeHtml(user.nome)}</b>
           ${Const.rotuloTipoUsuario(user.tipo)}

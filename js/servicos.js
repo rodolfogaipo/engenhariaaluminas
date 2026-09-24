@@ -682,15 +682,28 @@ async function renderServicoForm(view) {
         anexosInput.disabled = true;
         document.getElementById('btn-salvar-servico').disabled = true;
         const listaCont = document.getElementById('lista-anexos-form');
-        for (const arquivo of arquivos) {
-          if (listaCont) listaCont.innerHTML = `<div class="row__meta">Enviando "${escapeHtml(arquivo.name)}" pro Google Drive…</div>`;
-          try {
-            const anexo = await arquivoParaAnexo(arquivo);
-            st.anexos.push(anexo);
-          } catch (e) {
-            st.erro = `Não consegui adicionar "${arquivo.name}": ${e.message}`;
-          }
-        }
+        const aceitos = arquivos.filter((f) => f.type.startsWith('image/') || f.type === 'application/pdf' || f.type.startsWith('video/'));
+        const recusados = arquivos.filter((f) => !aceitos.includes(f));
+        const { enviados, erros } = await Drive.enviarVarios(aceitos, (feitos, total) => {
+          if (listaCont) listaCont.innerHTML = `<div class="row__meta">Enviando pro Google Drive: ${feitos} de ${total} pronto(s)…</div>`;
+        });
+        enviados.forEach((anexo) =>
+          st.anexos.push({
+            id: anexo.id,
+            nome: anexo.nome,
+            tipo: anexo.tipo,
+            linkBaixar: anexo.linkBaixar,
+            linkVisualizar: anexo.linkVisualizar,
+            linkImagem: anexo.linkImagem,
+            tamanho: anexo.tamanho,
+            criadoEm: anexo.criadoEm,
+          })
+        );
+        const msgs = [
+          ...recusados.map((f) => `Não consegui adicionar "${f.name}": só PDF, imagem ou vídeo são aceitos`),
+          ...erros.map((e) => `Não consegui adicionar "${e.nome}": ${e.mensagem}`),
+        ];
+        if (msgs.length) st.erro = msgs.join(' ');
         anexosInput.value = '';
         anexosInput.disabled = false;
         renderServicoForm(view);

@@ -51,7 +51,7 @@ async function renderRaioX(view) {
             ${funcionarios
               .map(
                 (f) =>
-                  `<button class="chip ${st.modo === 'individual' && st.funcionarioId === f.id ? 'chip--on' : ''}" data-rx-func="${f.id}">${escapeHtml(primeiroNome(f.nome))}</button>`
+                  `<button class="chip chip--foto ${st.modo === 'individual' && st.funcionarioId === f.id ? 'chip--on' : ''}" data-rx-func="${f.id}">${avatarUsuario(f, 22)}${escapeHtml(primeiroNome(f.nome))}</button>`
               )
               .join('')}
             ${funcionarios.length > 1 ? `<button class="chip ${st.modo === 'comparar' ? 'chip--on' : ''}" id="rx-comparar">Comparar equipe</button>` : ''}
@@ -159,7 +159,16 @@ async function renderRaioXIndividual(cont, view, funcionarioId, doPeriodo, itens
   const totalNovosJanela = serieNovos.reduce((a, b) => a + b, 0);
   const totalQtdJanela = serieQtd.reduce((a, b) => a + b, 0);
 
+  const pessoa = await DB.get('usuarios', funcionarioId);
   cont.innerHTML = `
+    ${
+      pessoa
+        ? `<div style="display:flex; align-items:center; gap:12px; margin:0 0 14px 2px">
+            ${avatarUsuario(pessoa, 48)}
+            <div><div class="row__title" style="font-size:16px">${escapeHtml(pessoa.nome)}</div><div class="row__meta">${escapeHtml(periodo.rotulo)}</div></div>
+          </div>`
+        : ''
+    }
     <div class="stat-grid">
       <div class="card"><div class="stat"><div class="stat__value">${totais.qtd}</div><div class="stat__label">Serviços concluídos</div></div></div>
       <div class="card"><div class="stat"><div class="stat__value">${totais.erros}</div><div class="stat__label">Erros</div></div></div>
@@ -303,7 +312,7 @@ async function renderRaioXComparar(cont, view, funcionarios, doPeriodo, itensTod
             ${porFunc
               .map(
                 (p) => `<tr>
-                  <td>${escapeHtml(p.f.nome)}</td>
+                  <td><span style="display:inline-flex; align-items:center; gap:8px">${avatarUsuario(p.f, 26)}${escapeHtml(p.f.nome)}</span></td>
                   <td class="num">${p.totais.qtd}</td>
                   <td class="num">${p.totais.erros}</td>
                   <td class="num">${p.totais.errosNovos}</td>

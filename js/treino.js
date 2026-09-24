@@ -234,15 +234,11 @@ async function renderTreinoForm(view) {
     anexosInput.disabled = true;
     document.getElementById('btn-salvar-treino').disabled = true;
     const cont = document.getElementById('lista-anexos-treino');
-    for (const arquivo of arquivos) {
-      cont.innerHTML = `<div class="row__meta">Enviando "${escapeHtml(arquivo.name)}" pro Google Drive… (pode levar um tempo, dependendo do tamanho) — aguarde antes de Salvar</div>`;
-      try {
-        const anexo = await Drive.enviarArquivo(arquivo);
-        st.anexos.push(anexo);
-      } catch (e) {
-        st.erro = `Não consegui enviar "${arquivo.name}": ${e.message}`;
-      }
-    }
+    const { enviados, erros } = await Drive.enviarVarios(arquivos, (feitos, total) => {
+      if (cont) cont.innerHTML = `<div class="row__meta">Enviando pro Google Drive: ${feitos} de ${total} pronto(s)… (vídeo grande pode levar um tempo) — aguarde antes de Salvar</div>`;
+    });
+    st.anexos.push(...enviados);
+    if (erros.length) st.erro = erros.map((e) => `Não consegui enviar "${e.nome}": ${e.mensagem}`).join(' ');
     anexosInput.value = '';
     anexosInput.disabled = false;
     renderTreinoForm(view);
