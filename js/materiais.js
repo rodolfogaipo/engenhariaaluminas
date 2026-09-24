@@ -15,29 +15,58 @@ const MateriaisView = {
 };
 
 const Materiais = {
-  TIPOS: ['Tecido', 'Tela', 'Couro'],
+  // categorias que já vêm criadas na primeira vez (o Admin pode
+  // renomear ou excluir qualquer uma, e criar outras)
+  CATEGORIAS_PADRAO: [
+    { id: 'catmat-tecido', nome: 'Tecido' },
+    { id: 'catmat-tela', nome: 'Tela' },
+    { id: 'catmat-couro', nome: 'Couro' },
+  ],
+
+  // cópia em memória das categorias, pra quem precisa responder na hora
+  // (ex: ao trocar o tipo de serviço no formulário)
+  _cacheCategorias: null,
 
   async listar() {
     const todos = await DB.getAll('materiais');
     return todos.sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'));
   },
 
-  // Qual tipo de material uma categoria de serviço usa (ou null se não
-  // usa). Vale pras categorias de corte: "Corte Tecido", "Corte Tela",
-  // "Corte Couro" — e qualquer categoria criada que siga o mesmo nome
-  // (ex: "Corte Tecido Especial"). "Teste Corte Tecido" não entra.
-  tipoDaCategoria(nomeCategoria) {
-    const n = (nomeCategoria || '')
-      .toString()
-      .trim()
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
+  async listarCategorias() {
+    let cats = await DB.getAll('categorias_material');
+    const semeado = await DB.get('config', 'categorias_material_semeadas');
+    if (cats.length === 0 && !semeado) {
+      // IDs fixos: se dois aparelhos semearem juntos, escrevem no mesmo documento
+      const agora = Date.now();
+      cats = this.CATEGORIAS_PADRAO.map((c) => ({ ...c, criadoEm: agora }));
+      await DB.putMany('categorias_material', cats);
+      await DB.put('config', { chave: 'categorias_material_semeadas', valor: agora });
+    }
+    cats.sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'));
+    this._cacheCategorias = cats;
+    return cats;
+  },
+
+  nomesCategorias() {
+    return (this._cacheCategorias || this.CATEGORIAS_PADRAO).map((c) => c.nome);
+  },
+
+  // Qual categoria de material um tipo de serviço usa (ou null se não
+  // usa). Vale pros tipos que começam com "Corte": "Corte Tecido" usa
+  // Tecido, "Corte Espuma" usa Espuma (se existir a categoria Espuma),
+  // e assim por diante. "Teste Corte Tecido" não entra.
+  tipoDaCategoria(nomeCategoria, categorias) {
+    const n = normalizaBuscaMaterial(nomeCategoria);
     if (!n.startsWith('corte')) return null;
-    if (n.includes('tecido')) return 'Tecido';
-    if (n.includes('tela')) return 'Tela';
-    if (n.includes('couro')) return 'Couro';
-    return null;
+    const resto = ' ' + n.slice('corte'.length).trim() + ' ';
+    const nomes = (categorias || this._cacheCategorias || this.CATEGORIAS_PADRAO).map((c) => (typeof c === 'string' ? c : c.nome));
+    // o nome mais comprido primeiro (ex: "Tecido Técnico" antes de "Tecido")
+    const ordenados = [...nomes].sort((a, b) => b.length - a.length);
+    const achado = ordenados.find((nome) => {
+      const alvo = normalizaBuscaMaterial(nome);
+      return alvo && resto.includes(' ' + alvo + ' ');
+    });
+    return achado || null;
   },
 
   rotulo(m) {
@@ -64,8 +93,12 @@ function normalizaBuscaMaterial(s) {
 }
 
 async function renderMateriais(view) {
+  await Materiais.listarCategorias();
   if (MateriaisView.subView === 'form' && Auth.isAdmin()) {
     return renderMaterialForm(view);
+  }
+  if (MateriaisView.subView === 'categorias' && Auth.isAdmin()) {
+    return renderCategoriasMaterial(view);
   }
   return renderMateriaisLista(view);
 }
@@ -76,9 +109,16 @@ async function renderMateriaisLista(view) {
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap">
       <div>
         <h2 class="section-title" style="margin-bottom:2px">Materiais</h2>
-        <p class="section-sub" style="margin:0">Tecidos, telas e couros com a largura, pra escolher no lançamento de corte</p>
+        <p class="section-sub" style="margin:0">Materiais com a largura, pra escolher no lançamento de corte</p>
       </div>
-      ${ehAdmin ? '<button class="btn btn--primary" id="btn-novo-material">+ Novo Material</button>' : ''}
+      ${
+        ehAdmin
+          ? `<div style="display:flex; gap:8px; flex-wrap:wrap">
+              <button class="btn btn--ghost" id="btn-categorias-material">Categorias</button>
+              <button class="btn btn--primary" id="btn-novo-material">+ Novo Material</button>
+            </div>`
+          : ''
+      }
     </div>
 
     <div class="field" style="margin-bottom:12px">
@@ -86,18 +126,35 @@ async function renderMateriaisLista(view) {
     </div>
     <div class="chips" style="margin-bottom:18px">
       <button class="chip ${!MateriaisView.filtroTipo ? 'chip--on' : ''}" data-filtro-tipo="">Todos</button>
-      ${Materiais.TIPOS.map(
-        (t) => `<button class="chip ${MateriaisView.filtroTipo === t ? 'chip--on' : ''}" data-filtro-tipo="${t}">${t}</button>`
+      ${Materiais.nomesCategorias().map(
+        (t) => `<button class="chip ${MateriaisView.filtroTipo === t ? 'chip--on' : ''}" data-filtro-tipo="${escapeHtml(t)}">${escapeHtml(t)}</button>`
       ).join('')}
     </div>
 
     <div id="lista-materiais"></div>
   `;
 
+  // se o filtro era uma categoria que foi renomeada/excluída, volta pra "Todos"
+  if (MateriaisView.filtroTipo && !Materiais.nomesCategorias().includes(MateriaisView.filtroTipo)) {
+    MateriaisView.filtroTipo = '';
+  }
+
   if (ehAdmin) {
     document.getElementById('btn-novo-material').addEventListener('click', () => {
       MateriaisView.subView = 'form';
-      MateriaisView.formState = { editId: null, nome: '', tipo: MateriaisView.filtroTipo || 'Tecido', largura: '', observacao: '', erro: '' };
+      MateriaisView.formState = {
+        editId: null,
+        nome: '',
+        tipo: MateriaisView.filtroTipo || Materiais.nomesCategorias()[0] || '',
+        largura: '',
+        observacao: '',
+        erro: '',
+      };
+      renderView('materiais');
+    });
+    document.getElementById('btn-categorias-material').addEventListener('click', () => {
+      MateriaisView.subView = 'categorias';
+      MateriaisView.catForm = null;
       renderView('materiais');
     });
   }
@@ -228,9 +285,10 @@ function renderMaterialForm(view) {
 
     <div class="card">
       <div class="field">
-        <label for="f-mat-tipo">Tipo</label>
+        <label for="f-mat-tipo">Categoria</label>
         <select id="f-mat-tipo">
-          ${Materiais.TIPOS.map((t) => `<option value="${t}" ${st.tipo === t ? 'selected' : ''}>${t}</option>`).join('')}
+          ${Materiais.nomesCategorias().map((t) => `<option value="${escapeHtml(t)}" ${st.tipo === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}
+          ${st.tipo && !Materiais.nomesCategorias().includes(st.tipo) ? `<option value="${escapeHtml(st.tipo)}" selected>${escapeHtml(st.tipo)} (categoria excluída)</option>` : ''}
         </select>
       </div>
       <div class="field">
@@ -267,6 +325,10 @@ function renderMaterialForm(view) {
 
   document.getElementById('btn-salvar-material').addEventListener('click', async () => {
     const nome = (st.nome || '').trim();
+    if (!st.tipo) {
+      st.erro = 'Cadastre uma categoria antes (botão "Categorias").';
+      return renderMaterialForm(view);
+    }
     if (!nome) {
       st.erro = 'Digite o nome do material.';
       return renderMaterialForm(view);
@@ -285,7 +347,7 @@ function renderMaterialForm(view) {
       (m) => m.id !== st.editId && m.tipo === st.tipo && normalizaBuscaMaterial(m.nome) === normalizaBuscaMaterial(nome)
     );
     if (duplicado) {
-      st.erro = `Já existe um ${st.tipo.toLowerCase()} com esse nome.`;
+      st.erro = `Já existe um material com esse nome na categoria ${st.tipo}.`;
       return renderMaterialForm(view);
     }
 
@@ -330,6 +392,167 @@ function renderMaterialForm(view) {
     window.operacaoEmAndamento = false;
     voltar();
   });
+}
+
+/* ---------------- CATEGORIAS DE MATERIAL (só Admin) ---------------- */
+
+async function renderCategoriasMaterial(view) {
+  const cf = MateriaisView.catForm;
+  const cats = await Materiais.listarCategorias();
+  const materiais = await Materiais.listar();
+  const qtdPorCat = {};
+  materiais.forEach((m) => (qtdPorCat[m.tipo] = (qtdPorCat[m.tipo] || 0) + 1));
+
+  view.innerHTML = `
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px">
+      <button class="topbar__icon-btn" id="btn-voltar-cat-mat" aria-label="Voltar" style="background:var(--paper-dim)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div>
+        <h2 class="section-title" style="margin:0">Categorias de material</h2>
+        <p class="section-sub" style="margin:0">O lançamento "Corte X" mostra os materiais da categoria X (ex: Corte Espuma → Espuma)</p>
+      </div>
+    </div>
+
+    ${cf && cf.erro ? `<div class="auth__error show" style="text-align:left; margin-bottom:16px">${escapeHtml(cf.erro)}</div>` : ''}
+
+    ${
+      cf
+        ? `<div class="card" style="margin-bottom:16px">
+            <h3 class="section-title" style="font-size:16px">${cf.editId ? 'Renomear categoria' : 'Nova categoria'}</h3>
+            <div class="field" style="margin-top:10px">
+              <label for="f-cat-mat-nome">Nome</label>
+              <input id="f-cat-mat-nome" value="${escapeHtml(cf.nome)}" placeholder="Ex: Espuma" autocomplete="off" />
+            </div>
+            ${cf.editId ? '<div class="row__meta" style="margin:-6px 0 14px">Os materiais e os serviços que usam essa categoria são atualizados junto.</div>' : ''}
+            <div style="display:flex; gap:10px">
+              <button class="btn btn--ghost" id="btn-cancelar-cat-mat" style="flex:1">Cancelar</button>
+              <button class="btn btn--primary" id="btn-salvar-cat-mat" style="flex:2">${cf.editId ? 'Salvar' : 'Criar categoria'}</button>
+            </div>
+          </div>`
+        : `<div style="display:flex; justify-content:flex-end; margin-bottom:14px">
+            <button class="btn btn--primary" id="btn-nova-cat-mat">+ Nova Categoria</button>
+          </div>`
+    }
+
+    <div class="card" style="padding:0">
+      ${
+        cats.length === 0
+          ? '<div class="empty"><div class="empty__title">Nenhuma categoria</div><div class="empty__sub">Crie a primeira em "+ Nova Categoria".</div></div>'
+          : cats
+              .map(
+                (c) => `
+          <div class="row" style="padding:14px 18px; flex-wrap:wrap">
+            <div class="row__main" style="flex:1 1 180px">
+              <div class="row__title">${escapeHtml(c.nome)}</div>
+              <div class="row__meta">${qtdPorCat[c.nome] || 0} material(is)</div>
+            </div>
+            <div style="display:flex; gap:6px; flex:0 0 auto">
+              <button class="btn btn--ghost" data-renomear-cat-mat="${c.id}" style="padding:6px 12px; font-size:13px">Editar</button>
+              <button class="btn btn--danger" data-excluir-cat-mat="${c.id}" style="padding:6px 12px; font-size:13px">Excluir</button>
+            </div>
+          </div>`
+              )
+              .join('')
+      }
+    </div>
+  `;
+
+  document.getElementById('btn-voltar-cat-mat').addEventListener('click', () => {
+    MateriaisView.subView = 'lista';
+    MateriaisView.catForm = null;
+    renderView('materiais');
+  });
+
+  const btnNova = document.getElementById('btn-nova-cat-mat');
+  if (btnNova) {
+    btnNova.addEventListener('click', () => {
+      MateriaisView.catForm = { editId: null, nome: '', erro: '' };
+      renderCategoriasMaterial(view);
+    });
+  }
+
+  view.querySelectorAll('[data-renomear-cat-mat]').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      const c = cats.find((x) => x.id === btn.dataset.renomearCatMat);
+      if (!c) return;
+      MateriaisView.catForm = { editId: c.id, nome: c.nome, erro: '' };
+      renderCategoriasMaterial(view);
+    })
+  );
+
+  view.querySelectorAll('[data-excluir-cat-mat]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const c = cats.find((x) => x.id === btn.dataset.excluirCatMat);
+      if (!c) return;
+      const n = qtdPorCat[c.nome] || 0;
+      if (n > 0) {
+        alert(`A categoria ${c.nome} ainda tem ${n} material(is). Mova ou exclua esses materiais antes de apagar a categoria.`);
+        return;
+      }
+      if (!confirm(`Excluir a categoria ${c.nome}?`)) return;
+      await DB.delete('categorias_material', c.id);
+      renderCategoriasMaterial(view);
+    })
+  );
+
+  if (cf) {
+    const input = document.getElementById('f-cat-mat-nome');
+    input.addEventListener('input', () => (cf.nome = input.value));
+    input.focus();
+    document.getElementById('btn-cancelar-cat-mat').addEventListener('click', () => {
+      MateriaisView.catForm = null;
+      renderCategoriasMaterial(view);
+    });
+    document.getElementById('btn-salvar-cat-mat').addEventListener('click', async () => {
+      const nome = (cf.nome || '').trim();
+      if (!nome) {
+        cf.erro = 'Digite o nome da categoria.';
+        return renderCategoriasMaterial(view);
+      }
+      const repetida = cats.find((c) => c.id !== cf.editId && normalizaBuscaMaterial(c.nome) === normalizaBuscaMaterial(nome));
+      if (repetida) {
+        cf.erro = `Já existe a categoria ${repetida.nome}.`;
+        return renderCategoriasMaterial(view);
+      }
+      const btn = document.getElementById('btn-salvar-cat-mat');
+      btn.disabled = true;
+      btn.textContent = 'Salvando…';
+      window.operacaoEmAndamento = true;
+      try {
+        await comTimeout(
+          (async () => {
+            if (cf.editId) {
+              const cat = cats.find((c) => c.id === cf.editId);
+              const antigo = cat.nome;
+              cat.nome = nome;
+              cat.atualizadoEm = Date.now();
+              await DB.put('categorias_material', cat);
+              if (antigo !== nome) {
+                // leva o nome novo pros materiais e pros serviços que já usam
+                const mats = (await DB.getAll('materiais')).filter((m) => m.tipo === antigo);
+                mats.forEach((m) => (m.tipo = nome));
+                if (mats.length) await DB.putMany('materiais', mats);
+                const servs = (await DB.getAll('servicos')).filter((sv) => sv.materialTipo === antigo);
+                servs.forEach((sv) => (sv.materialTipo = nome));
+                if (servs.length) await DB.putMany('servicos', servs);
+                if (MateriaisView.filtroTipo === antigo) MateriaisView.filtroTipo = nome;
+              }
+            } else {
+              await DB.put('categorias_material', { id: dbUtil.uid(), nome, criadoEm: Date.now() });
+            }
+          })()
+        );
+      } catch (e) {
+        cf.erro = 'Não consegui salvar: ' + (e && e.message ? e.message : 'erro desconhecido.');
+        window.operacaoEmAndamento = false;
+        return renderCategoriasMaterial(view);
+      }
+      window.operacaoEmAndamento = false;
+      MateriaisView.catForm = null;
+      renderCategoriasMaterial(view);
+    });
+  }
 }
 
 window.Materiais = Materiais;

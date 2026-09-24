@@ -948,6 +948,7 @@ async function fazerBackup() {
     'categorias_servico',
     'produtos_mkt',
     'materiais',
+    'categorias_material',
   ];
 
   const dados = { exportadoEm: Date.now() };

@@ -25,7 +25,16 @@ const RelatorioView = {
   material: '',
   nome: '',
   agrupamento: 'movel', // 'movel' | 'categoria'
+  // o que entra no PDF
+  incluirResumo: true,
+  incluirEvolucao: true,
+  evolucaoTipo: 'semanal', // 'semanal' | 'mensal'
+  evolucaoQtdSemanas: 8,
+  evolucaoQtdMeses: 6,
+  incluirPrazo: true,
+  incluirAproveitamento: true,
   incluirLista: true,
+  ordemLista: 'data', // 'data' | 'cat-nome' | 'cat-data'
   selecaoManual: false,
   selecionados: new Set(),
   buscaSelecao: '',
@@ -67,6 +76,35 @@ async function dadosDoRelatorio() {
   return { itensTodos, periodo, funcionarios, filtrosSemPeriodo, base, finais, funcionario };
 }
 
+const ORDENS_LISTA = {
+  data: 'Por data de conclusão',
+  'cat-nome': 'Por categoria, depois nome (A→Z)',
+  'cat-data': 'Por categoria, depois data de conclusão',
+};
+
+function ordenarItensRelatorio(itens, ordem) {
+  const porData = (a, b) => a.dataFinal - b.dataFinal;
+  const porCategoria = (a, b) => (a.categoria || '').localeCompare(b.categoria || '', 'pt-BR');
+  const porNome = (a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { numeric: true });
+  const lista = [...itens];
+  if (ordem === 'cat-nome') return lista.sort((a, b) => porCategoria(a, b) || porNome(a, b) || porData(a, b));
+  if (ordem === 'cat-data') return lista.sort((a, b) => porCategoria(a, b) || porData(a, b) || porNome(a, b));
+  return lista.sort((a, b) => porData(a, b) || porCategoria(a, b) || porNome(a, b));
+}
+
+// "Máyra Fernada Amaral de Souza" → "Máyra Souza" (economiza linhas na lista impressa)
+function nomeCurtoRelatorio(nome) {
+  const partes = (nome || '').trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return '—';
+  if (partes.length === 1) return partes[0];
+  return `${partes[0]} ${partes[partes.length - 1]}`;
+}
+
+function secoesLigadas() {
+  const st = RelatorioView;
+  return st.incluirResumo || st.incluirEvolucao || st.incluirPrazo || st.incluirAproveitamento || st.incluirLista;
+}
+
 function descricaoFiltros(d, comData) {
   const st = RelatorioView;
   const partes = [`Período: ${d.periodo.rotulo}`, `Funcionário: ${d.funcionario ? d.funcionario.nome : 'Todos'}`];
@@ -74,6 +112,7 @@ function descricaoFiltros(d, comData) {
   if (st.material) partes.push(`Material: ${st.material}`);
   if (st.nome && st.nome.trim()) partes.push(`Nome contém: "${st.nome.trim()}"`);
   if (st.selecaoManual) partes.push(`Seleção manual: ${d.finais.length} item(ns)`);
+  if (comData) partes.push(`Ordem: ${ORDENS_LISTA[st.ordemLista] || ORDENS_LISTA.data}`);
   if (comData) partes.push(`Gerado em ${Const.formatarDataHora(Date.now())}`);
   return partes.join(' | ');
 }
@@ -197,18 +236,69 @@ async function renderRelatorioFiltros(cont) {
             <div id="rel-lista-sel"></div>`
           : ''
       }
-      <label class="perm-item" style="margin-top:14px">
-        <input type="checkbox" id="rel-incluir-lista" ${st.incluirLista ? 'checked' : ''} />
-        <span>Incluir a lista detalhada item por item no PDF</span>
-      </label>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap">
+        <div>
+          <h3 class="section-title" style="font-size:16px">O que incluir no PDF</h3>
+          <p class="section-sub" style="margin:0">Ligue só as partes que quiser</p>
+        </div>
+        <button class="btn btn--ghost" id="rel-so-lista" style="padding:8px 14px; font-size:13px">Apenas a lista detalhada</button>
+      </div>
+      <div class="rel-incluir">
+        <label class="perm-item"><input type="checkbox" data-rel-incluir="incluirResumo" ${st.incluirResumo ? 'checked' : ''} /><span>Resumo (projetos, nota, % da meta)</span></label>
+
+        <label class="perm-item"><input type="checkbox" data-rel-incluir="incluirEvolucao" ${st.incluirEvolucao ? 'checked' : ''} /><span>Evolução</span></label>
+        ${
+          st.incluirEvolucao
+            ? `<div class="rel-sub">
+                <div class="chips">
+                  <button class="chip ${st.evolucaoTipo === 'semanal' ? 'chip--on' : ''}" data-rel-evo="semanal">Semanal</button>
+                  <button class="chip ${st.evolucaoTipo === 'mensal' ? 'chip--on' : ''}" data-rel-evo="mensal">Mensal</button>
+                </div>
+                <div class="rel-qtd">
+                  <span>Últimas</span>
+                  <input id="rel-evo-qtd" type="number" inputmode="numeric" min="1" max="${st.evolucaoTipo === 'semanal' ? 104 : 36}" step="1" value="${st.evolucaoTipo === 'semanal' ? st.evolucaoQtdSemanas : st.evolucaoQtdMeses}" aria-label="Quantidade" />
+                  <span>${st.evolucaoTipo === 'semanal' ? 'semanas' : 'meses'}, terminando no período escolhido</span>
+                </div>
+              </div>`
+            : ''
+        }
+
+        <label class="perm-item"><input type="checkbox" data-rel-incluir="incluirPrazo" ${st.incluirPrazo ? 'checked' : ''} /><span>Prazo, atraso e erros</span></label>
+        <label class="perm-item"><input type="checkbox" data-rel-incluir="incluirAproveitamento" ${st.incluirAproveitamento ? 'checked' : ''} /><span>Aproveitamento e desperdício</span></label>
+
+        <label class="perm-item"><input type="checkbox" data-rel-incluir="incluirLista" ${st.incluirLista ? 'checked' : ''} /><span>Lista detalhada item por item</span></label>
+        ${
+          st.incluirLista
+            ? `<div class="rel-sub">
+                <div class="row__meta" style="margin-bottom:6px">Ordem da lista (vale também pra planilha)</div>
+                <div class="chips">
+                  ${Object.entries(ORDENS_LISTA)
+                    .map(([v, l]) => `<button class="chip ${st.ordemLista === v ? 'chip--on' : ''}" data-rel-ordem="${v}">${l}</button>`)
+                    .join('')}
+                </div>
+              </div>`
+            : `<div class="rel-sub">
+                <div class="row__meta" style="margin-bottom:6px">Ordem das linhas na planilha</div>
+                <div class="chips">
+                  ${Object.entries(ORDENS_LISTA)
+                    .map(([v, l]) => `<button class="chip ${st.ordemLista === v ? 'chip--on' : ''}" data-rel-ordem="${v}">${l}</button>`)
+                    .join('')}
+                </div>
+              </div>`
+        }
+      </div>
+      ${secoesLigadas() ? '' : '<div class="row__meta" style="margin-top:10px; color:var(--danger-fg)">Nenhuma parte ligada — ligue pelo menos uma pra gerar o PDF.</div>'}
     </div>
 
     <div class="card">
       <h3 class="section-title" style="font-size:16px">Gerar</h3>
       <p class="section-sub">${escapeHtml(descricaoFiltros(d, false))}</p>
       <div style="display:flex; gap:8px; flex-wrap:wrap">
-        <button class="btn btn--ghost" id="rel-visualizar" ${d.finais.length ? '' : 'disabled'}>Visualizar</button>
-        <button class="btn btn--primary" id="rel-pdf" ${d.finais.length ? '' : 'disabled'}>Gerar PDF</button>
+        <button class="btn btn--ghost" id="rel-visualizar" ${d.finais.length && secoesLigadas() ? '' : 'disabled'}>Visualizar</button>
+        <button class="btn btn--primary" id="rel-pdf" ${d.finais.length && secoesLigadas() ? '' : 'disabled'}>Gerar PDF</button>
         <button class="btn btn--metal" id="rel-xlsx" ${d.finais.length ? '' : 'disabled'}>Exportar Excel (.xlsx)</button>
         <button class="btn btn--ghost" id="rel-csv" ${d.finais.length ? '' : 'disabled'}>Exportar CSV</button>
       </div>
@@ -257,7 +347,43 @@ async function renderRelatorioFiltros(cont) {
   cont.querySelectorAll('[data-rel-agrup]').forEach((btn) =>
     btn.addEventListener('click', () => ((st.agrupamento = btn.dataset.relAgrup), rerender()))
   );
-  document.getElementById('rel-incluir-lista').addEventListener('change', (ev) => (st.incluirLista = ev.target.checked));
+  cont.querySelectorAll('[data-rel-incluir]').forEach((chk) =>
+    chk.addEventListener('change', () => {
+      st[chk.dataset.relIncluir] = chk.checked;
+      st.status = '';
+      rerender();
+    })
+  );
+  document.getElementById('rel-so-lista').addEventListener('click', () => {
+    st.incluirResumo = false;
+    st.incluirEvolucao = false;
+    st.incluirPrazo = false;
+    st.incluirAproveitamento = false;
+    st.incluirLista = true;
+    st.status = '';
+    rerender();
+  });
+  cont.querySelectorAll('[data-rel-evo]').forEach((btn) =>
+    btn.addEventListener('click', () => ((st.evolucaoTipo = btn.dataset.relEvo), rerender()))
+  );
+  cont.querySelectorAll('[data-rel-ordem]').forEach((btn) =>
+    btn.addEventListener('click', () => ((st.ordemLista = btn.dataset.relOrdem), rerender()))
+  );
+  const qtdInput = document.getElementById('rel-evo-qtd');
+  if (qtdInput) {
+    qtdInput.addEventListener('change', () => {
+      const max = st.evolucaoTipo === 'semanal' ? 104 : 36;
+      let v = parseInt(qtdInput.value, 10);
+      if (isNaN(v) || v < 1) v = 1;
+      if (v > max) v = max;
+      if (st.evolucaoTipo === 'semanal') st.evolucaoQtdSemanas = v;
+      else st.evolucaoQtdMeses = v;
+      rerender();
+    });
+    qtdInput.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') qtdInput.blur();
+    });
+  }
 
   document.getElementById('rel-toggle-manual').addEventListener('click', () => {
     st.selecaoManual = !st.selecaoManual;
@@ -354,14 +480,14 @@ async function renderRelatorioFiltros(cont) {
   document.getElementById('rel-xlsx').addEventListener('click', async () => {
     const dados = await dadosDoRelatorio();
     if (!dados.finais.length) return rerender();
-    Exportar.baixar(Exportar.gerarXLSX(dados.finais, descricaoFiltros(dados, true)), Exportar.nomeArquivo('xlsx'));
+    Exportar.baixar(Exportar.gerarXLSX(ordenarItensRelatorio(dados.finais, st.ordemLista), descricaoFiltros(dados, true)), Exportar.nomeArquivo('xlsx'));
     setStatus(`Planilha .xlsx com ${dados.finais.length} linha(s) baixada.`);
   });
 
   document.getElementById('rel-csv').addEventListener('click', async () => {
     const dados = await dadosDoRelatorio();
     if (!dados.finais.length) return rerender();
-    Exportar.baixar(Exportar.gerarCSV(dados.finais, descricaoFiltros(dados, true)), Exportar.nomeArquivo('csv'));
+    Exportar.baixar(Exportar.gerarCSV(ordenarItensRelatorio(dados.finais, st.ordemLista), descricaoFiltros(dados, true)), Exportar.nomeArquivo('csv'));
     setStatus(`Arquivo .csv com ${dados.finais.length} linha(s) baixado.`);
   });
 }
@@ -373,7 +499,9 @@ function atualizarContagemSelecao(d) {
   if (sub) sub.textContent = `${n} de ${d.base.length} item(ns) escolhidos a dedo`;
   ['rel-visualizar', 'rel-pdf', 'rel-xlsx', 'rel-csv'].forEach((id) => {
     const b = document.getElementById(id);
-    if (b) b.disabled = n === 0;
+    if (!b) return;
+    const precisaSecao = id === 'rel-visualizar' || id === 'rel-pdf';
+    b.disabled = n === 0 || (precisaSecao && !secoesLigadas());
   });
 }
 
@@ -389,17 +517,14 @@ function garantirPrintRoot() {
   return root;
 }
 
+/* Faixas do gráfico de evolução: N semanas ou N meses, terminando no
+   período escolhido (sem passar de hoje). */
 async function faixasDaEvolucao(periodo) {
   const st = RelatorioView;
-  if (st.periodoTipo === 'semana') return Analise.faixasSemanais(8, periodo.inicio);
-  if (st.periodoTipo === 'mes') return Analise.faixasMensais(6, periodo.inicio);
-  if (st.periodoTipo === 'ano') return Analise.faixasMensais(12, new Date(new Date(periodo.inicio).getFullYear(), 11, 1).getTime());
-  const dias = (periodo.fim - periodo.inicio) / 86400000;
-  if (dias <= 84) return Analise.faixasSemanais(Math.max(1, Math.ceil(dias / 7)), periodo.fim - 1);
-  const ini = new Date(periodo.inicio);
-  const fimD = new Date(periodo.fim - 1);
-  const meses = (fimD.getFullYear() - ini.getFullYear()) * 12 + fimD.getMonth() - ini.getMonth() + 1;
-  return Analise.faixasMensais(Math.min(24, meses), periodo.fim - 1);
+  const agora = Date.now();
+  const fimRef = periodo.fim != null ? Math.min(periodo.fim - 1, agora) : agora;
+  if (st.evolucaoTipo === 'mensal') return Analise.faixasMensais(Math.max(1, Math.min(36, st.evolucaoQtdMeses || 6)), fimRef);
+  return Analise.faixasSemanais(Math.max(1, Math.min(104, st.evolucaoQtdSemanas || 8)), fimRef);
 }
 
 async function montarPaginasRelatorio(d) {
@@ -413,6 +538,7 @@ async function montarPaginasRelatorio(d) {
   const caixa = (valor, rotulo) => `<div class="rp-caixa"><div class="rp-caixa__v">${valor}</div><div class="rp-caixa__l">${escapeHtml(rotulo)}</div></div>`;
 
   /* 1. Resumo */
+  if (st.incluirResumo) {
   secao('Resumo');
   if (d.funcionario) {
     const ind = await Analise.indicadoresPeriodo(d.funcionario.id, d.periodo.inicio, d.periodo.fim);
@@ -453,16 +579,21 @@ async function montarPaginasRelatorio(d) {
     tabela('<tr><th>Funcionário</th><th class="num">Projetos</th><th class="num">Nota média</th><th class="num">% da Meta</th><th class="num">Erros</th><th class="num">Erros novos</th><th class="num">Aprov. médio</th></tr>', linhas);
     html(`<p class="rp-nota">Nota e % da Meta seguem o cálculo oficial do app (média das semanas do período, sem férias) e não mudam com os filtros de categoria, material ou seleção manual.</p>`);
   }
+  } // fim Resumo
 
-  /* 2. Evolução */
+  /* 2. Evolução (semanal ou mensal, N faixas) */
   const faixas = await faixasDaEvolucao(d.periodo);
   const baseEvolucao = Analise.filtrar(d.itensTodos, d.filtrosSemPeriodo);
+  if (st.incluirEvolucao) {
   const qtdPorFaixa = faixas.map((f) => baseEvolucao.filter((i) => i.dataFinal >= f.inicio && i.dataFinal < f.fim).length);
+  const muitasFaixas = faixas.length > 16;
   secao(
-    faixas[0] && faixas[0].tipo === 'semana' ? `Evolução nas últimas ${faixas.length} semanas` : `Evolução nos últimos ${faixas.length} meses`,
+    st.evolucaoTipo === 'semanal'
+      ? faixas.length === 1 ? 'Evolução na última semana' : `Evolução nas últimas ${faixas.length} semanas`
+      : faixas.length === 1 ? 'Evolução no último mês' : `Evolução nos últimos ${faixas.length} meses`,
     'Projetos concluídos em cada período, com os mesmos filtros de funcionário, categoria, material e nome (sem a seleção manual).'
   );
-  html(`<div class="rp-grafico">${barrasVerticaisSVG(faixas.map((f) => f.rotulo), qtdPorFaixa, { altura: 190, largura: 640 })}</div>`);
+  html(`<div class="rp-grafico">${barrasVerticaisSVG(faixas.map((f) => f.rotulo), qtdPorFaixa, { altura: muitasFaixas ? 210 : 190, largura: 640, rotulosInclinados: muitasFaixas })}</div>`);
   if (d.funcionario) {
     const pcts = [];
     for (const f of faixas) {
@@ -477,8 +608,10 @@ async function montarPaginasRelatorio(d) {
       )}</div>`);
     }
   }
+  } // fim Evolução
 
   /* 3. Prazo / Atraso / Erros */
+  if (st.incluirPrazo) {
   secao('Prazo, atraso e erros', 'Itens incluídos no relatório.');
   html(`<div class="rp-duas">
     <div>${barrasHorizontaisSVG(
@@ -506,10 +639,11 @@ async function montarPaginasRelatorio(d) {
       return `<tr><td>${escapeHtml(c.categoria)}</td><td class="num">${c.qtd}</td><td class="num">${t.noPrazo}</td><td class="num">${t.atrasados}</td><td class="num">${t.semPrazo}</td><td class="num">${c.erros}</td><td class="num">${c.errosNovos}</td></tr>`;
     })
   );
+  } // fim Prazo
 
   /* 4. Aproveitamento / Desperdício */
   const grupos = Analise.aproveitamentoAgrupado(finais, st.agrupamento);
-  if (grupos.length) {
+  if (st.incluirAproveitamento && grupos.length) {
     const rotuloAgr = st.agrupamento === 'movel' ? 'por móvel' : 'por categoria';
     secao(`Aproveitamento e desperdício ${rotuloAgr}`, 'Média do % de aproveitamento informado pelo programa de corte. Desperdício = 100% − aproveitamento.');
     const topo = grupos.slice(0, 15);
@@ -546,27 +680,46 @@ async function montarPaginasRelatorio(d) {
     }
   }
 
-  /* 5. Lista detalhada */
+  /* 5. Lista detalhada — na ordem escolhida */
   if (st.incluirLista) {
-    secao('Lista detalhada', `${finais.length} item(ns), do mais antigo para o mais recente.`);
+    const ordem = st.ordemLista;
+    const ordenados = ordenarItensRelatorio(finais, ordem);
+    const porCategoria = ordem === 'cat-nome' || ordem === 'cat-data';
+    const subtituloOrdem =
+      ordem === 'cat-nome'
+        ? 'agrupados por categoria (A→Z) e, dentro dela, por nome'
+        : ordem === 'cat-data'
+        ? 'agrupados por categoria (A→Z) e, dentro dela, por data de conclusão'
+        : 'do mais antigo para o mais recente (data de conclusão)';
+    secao('Lista detalhada', `${finais.length} item(ns), ${subtituloOrdem}.`);
     const mostrarFunc = !d.funcionario;
-    tabela(
-      `<tr><th>Data</th><th>Categoria</th><th>Nome</th><th>Nº ped.</th>${mostrarFunc ? '<th>Funcionário</th>' : ''}<th>Material</th><th>Prazo</th><th class="num">Erros</th><th class="num">E. novos</th><th class="num">Aprov.</th></tr>`,
-      finais.map((i) => {
-        const prazo = Analise.situacaoPrazo(i);
-        return `<tr>
+    const nColunas = mostrarFunc ? 10 : 9;
+    const qtdPorCat = {};
+    ordenados.forEach((i) => (qtdPorCat[i.categoria] = (qtdPorCat[i.categoria] || 0) + 1));
+    const linhas = [];
+    let catAtual = null;
+    ordenados.forEach((i) => {
+      if (porCategoria && i.categoria !== catAtual) {
+        catAtual = i.categoria;
+        linhas.push(`<tr class="rp-grupo"><td colspan="${nColunas}">${escapeHtml(catAtual)} — ${qtdPorCat[catAtual]} item(ns)</td></tr>`);
+      }
+      const prazo = Analise.situacaoPrazo(i);
+      linhas.push(`<tr>
           <td class="nowrap">${formatarDataCurta(i.dataFinal)}</td>
           <td>${escapeHtml(i.categoria)}</td>
           <td>${escapeHtml(i.nome)}</td>
           <td>${escapeHtml(i.numeroPedido || '')}</td>
-          ${mostrarFunc ? `<td>${escapeHtml(i.funcionarioNome || '—')}</td>` : ''}
+          ${mostrarFunc ? `<td class="nowrap">${escapeHtml(nomeCurtoRelatorio(i.funcionarioNome))}</td>` : ''}
           <td>${escapeHtml(i.materialNome || '')}${i.materialLargura != null && i.materialNome ? ` <span class="rp-fraco">${formatarLarguraMaterial(i.materialLargura)}</span>` : ''}</td>
           <td class="nowrap ${prazo === 'Atrasado' ? 'rp-ruim' : ''}">${prazo === 'Sem data programada' ? 'Sem data' : prazo}</td>
           <td class="num">${i.erros}</td>
           <td class="num">${i.errosNovos}</td>
           <td class="num">${i.aproveitamento != null ? formatarPct(i.aproveitamento) : ''}</td>
-        </tr>`;
-      }),
+        </tr>`);
+    });
+    tabela(
+      `<tr><th>Data</th><th>Categoria</th><th>Nome</th><th>Nº ped.</th>${mostrarFunc ? '<th>Funcionário</th>' : ''}<th>Material</th><th>Prazo</th><th class="num">Erros</th><th class="num">E. novos</th><th class="num">Aprov.</th></tr>`,
+      linhas,
       'rp-tabela--lista'
     );
   }
@@ -697,6 +850,13 @@ function paginarRelatorio(root, blocos, cab) {
       tbody.appendChild(tr);
       if (cabe()) return;
       tr.remove();
+      // linha de título de categoria não fica sozinha no pé da página
+      let grupoPendente = null;
+      const ultima = tbody.lastElementChild;
+      if (ultima && ultima.classList.contains('rp-grupo')) {
+        grupoPendente = ultima;
+        ultima.remove();
+      }
       if (tbody.children.length === 0) {
         // nem a 1ª linha coube: a tabela inteira (e o título dela) vai pra próxima folha
         wrap.remove();
@@ -705,6 +865,7 @@ function paginarRelatorio(root, blocos, cab) {
           // página já vazia — não adianta trocar, deixa a linha aqui mesmo
           wrap = montarTabela();
           tbody = wrap.querySelector('tbody');
+          if (grupoPendente) tbody.appendChild(grupoPendente);
           tbody.appendChild(tr);
           return;
         }
@@ -715,6 +876,7 @@ function paginarRelatorio(root, blocos, cab) {
       }
       wrap = montarTabela();
       tbody = wrap.querySelector('tbody');
+      if (grupoPendente) tbody.appendChild(grupoPendente);
       tbody.appendChild(tr);
     });
   });

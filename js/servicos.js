@@ -530,6 +530,7 @@ async function renderServicoForm(view) {
   categoriasCache = await Categorias.listar();
   const ehCadastro = !editando && !!Categorias.categoriaCadastroDe(categoriasCache, st.tipo);
   const ehCorteComAproveitamento = Categorias.temPorcentagem(categoriasCache, st.tipo);
+  await Materiais.listarCategorias(); // categorias de material são livres (aba Materiais)
   const tipoMaterial = Materiais.tipoDaCategoria(st.tipo);
   const ehAdmin = Auth.isAdmin();
   if (ehAdmin) {

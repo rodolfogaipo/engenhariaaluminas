@@ -737,3 +737,23 @@ a { color: var(--brand-700); }
   body:not(.imprimindo-relatorio) #print-root { display: none !important; }
 }
 @page { size: A4; margin: 0; }
+
+/* Relatório — "O que incluir no PDF" */
+.rel-incluir { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.rel-sub { margin: -2px 0 4px 30px; padding: 10px 12px; border-left: 2px solid var(--line); }
+.rel-qtd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; font-size: 13.5px; color: var(--ink-soft); }
+.rel-qtd input {
+  width: 72px; padding: 8px 10px; border-radius: var(--radius-m);
+  border: 1px solid var(--line); background: var(--surface-sunken); color: var(--ink); text-align: center;
+}
+.rel-qtd input:focus { outline: 2px solid var(--brand-600); outline-offset: 1px; background: var(--surface); }
+
+/* Lista detalhada agrupada por categoria */
+.rp-tabela tr.rp-grupo td {
+  background: var(--brand-100) !important;
+  color: var(--brand-800);
+  font-weight: 700;
+  font-size: 8.5pt;
+  padding-top: 1.8mm;
+  border-bottom: 0.4mm solid var(--brand-500);
+}

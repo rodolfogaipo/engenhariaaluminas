@@ -15,7 +15,7 @@
    ========================================================= */
 
 const RaioXView = {
-  periodoTipo: 'mes', // 'mes' | 'ano' | 'tudo'
+  periodoTipo: 'mes', // 'semana' | 'mes' | 'ano' | 'tudo'
   dataReferencia: Date.now(),
   funcionarioId: null, // Admin: quem está sendo visto
   modo: 'individual', // 'individual' | 'comparar' (só Admin)
@@ -61,7 +61,8 @@ async function renderRaioX(view) {
 
     <div class="card" style="margin-bottom:16px">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
-        <div style="display:flex; gap:8px">
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+          <button class="btn ${st.periodoTipo === 'semana' ? 'btn--primary' : 'btn--ghost'}" data-rx-periodo="semana" style="padding:8px 12px; font-size:13px">Semana</button>
           <button class="btn ${st.periodoTipo === 'mes' ? 'btn--primary' : 'btn--ghost'}" data-rx-periodo="mes" style="padding:8px 12px; font-size:13px">Mês</button>
           <button class="btn ${st.periodoTipo === 'ano' ? 'btn--primary' : 'btn--ghost'}" data-rx-periodo="ano" style="padding:8px 12px; font-size:13px">Ano</button>
           <button class="btn ${st.periodoTipo === 'tudo' ? 'btn--primary' : 'btn--ghost'}" data-rx-periodo="tudo" style="padding:8px 12px; font-size:13px">Tudo</button>
@@ -73,7 +74,7 @@ async function renderRaioX(view) {
                 <button class="topbar__icon-btn" id="rx-anterior" style="background:var(--paper-dim)" aria-label="Período anterior">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M15 18l-6-6 6-6"/></svg>
                 </button>
-                <span style="font-weight:600; font-size:14px; min-width:130px; text-align:center">${periodo.rotulo}</span>
+                <span style="font-weight:600; font-size:14px; min-width:130px; text-align:center">${escapeHtml(st.periodoTipo === 'semana' ? periodo.rotulo.replace('Semana ', '') : periodo.rotulo)}</span>
                 <button class="topbar__icon-btn" id="rx-proximo" style="background:var(--paper-dim)" aria-label="Próximo período" ${ehAtual ? 'disabled' : ''}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M9 18l6-6-6-6"/></svg>
                 </button>
