@@ -23,6 +23,7 @@ const Permissoes = {
     { id: 'mkt', label: 'MKT' },
     { id: 'treino', label: 'Treino' },
     { id: 'materiais', label: 'Materiais' },
+    { id: 'atelie', label: 'Ateliê' },
     { id: 'raiox', label: 'Raio-X' },
   ],
 

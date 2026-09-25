@@ -19,7 +19,12 @@ const MESES_CURTOS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'S
 
 const Analise = {
   async itensConcluidos() {
-    const [servicos, planoCorte] = await Promise.all([DB.getAll('servicos'), DB.getAll('plano_corte')]);
+    const [servicos, planoCorte, catsAtelie, inicioAtelie] = await Promise.all([
+      DB.getAll('servicos'),
+      DB.getAll('plano_corte'),
+      Atelie.nomesCategorias(),
+      Atelie.inicio(),
+    ]);
     const itens = [];
 
     servicos.forEach((s) => {
@@ -41,6 +46,8 @@ const Analise = {
         materialTipo: s.materialTipo || '',
         materialLargura: s.materialLargura ?? null,
         observacoes: s.observacoes || '',
+        atelie: catsAtelie.has(s.tipo) ? Atelie.rotulo(Atelie.situacao(s, inicioAtelie)) : '',
+        atelieObs: catsAtelie.has(s.tipo) ? s.atelieObs || '' : '',
       });
     });
 

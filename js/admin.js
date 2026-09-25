@@ -83,6 +83,11 @@ async function renderAdminMais(cont) {
                   : ''
               }
               ${
+                pendencias.atelie > 0
+                  ? `<div class="row__meta">🧵 <b>${pendencias.atelie}</b> pedido(s) de mudança no Ateliê aguardando autorização — Ateliê</div>`
+                  : ''
+              }
+              ${
                 pendencias.materiais > 0
                   ? `<div class="row__meta">🧵 <b>${pendencias.materiais}</b> material(is) / categoria(s) aguardando aprovação — Materiais</div>`
                   : ''
@@ -777,6 +782,7 @@ const AdminCategoriasView = {
   ehSistema: false,
   nome: '',
   temPorcentagem: false,
+  vaiParaAtelie: false,
   erro: '',
 };
 
@@ -801,6 +807,7 @@ async function renderAdminCategorias(cont, view) {
             <div class="row__meta">${c.sistema ? 'Categoria padrão' : 'Criada por você'}</div>
           </div>
           <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto">
+            ${c.vaiParaAtelie ? '<span class="badge badge--brand">Ateliê</span>' : ''}
             <span class="badge ${c.temPorcentagem ? 'badge--brand' : 'badge--idle'}">${c.temPorcentagem ? 'Tem %' : 'Sem %'}</span>
             <button class="btn btn--ghost" data-editar-cat="${c.id}" style="padding:6px 12px; font-size:13px">Editar</button>
             <button class="btn btn--danger" data-excluir-cat="${c.id}" data-sistema-cat="${c.sistema ? '1' : ''}" style="padding:6px 12px; font-size:13px">Excluir</button>
@@ -817,6 +824,7 @@ async function renderAdminCategorias(cont, view) {
     AdminCategoriasView.ehSistema = false;
     AdminCategoriasView.nome = '';
     AdminCategoriasView.temPorcentagem = false;
+    AdminCategoriasView.vaiParaAtelie = false;
     AdminCategoriasView.erro = '';
     renderAdminCategorias(cont, view);
   });
@@ -830,6 +838,7 @@ async function renderAdminCategorias(cont, view) {
       AdminCategoriasView.ehSistema = !!cat.sistema;
       AdminCategoriasView.nome = cat.nome;
       AdminCategoriasView.temPorcentagem = !!cat.temPorcentagem;
+      AdminCategoriasView.vaiParaAtelie = !!cat.vaiParaAtelie;
       AdminCategoriasView.erro = '';
       renderAdminCategorias(cont, view);
     });
@@ -873,6 +882,11 @@ function renderFormCategoria(cont, view) {
         Essa categoria tem % de Aproveitamento (aparece o campo ao lançar, e entra no levantamento de aproveitamento)
       </label>
 
+      <label style="display:flex; align-items:center; gap:8px; margin-bottom:20px; font-size:14px; color:var(--ink-soft)">
+        <input id="f-cat-atelie" type="checkbox" style="width:18px; height:18px" ${st.vaiParaAtelie ? 'checked' : ''} />
+        Vai para o Ateliê (os serviços dessa categoria aparecem na aba Ateliê pra conferência)
+      </label>
+
       <div style="display:flex; gap:10px">
         <button class="btn btn--ghost" id="btn-cancelar-categoria" style="flex:1">Cancelar</button>
         <button class="btn btn--primary" id="btn-salvar-categoria" style="flex:2">Salvar</button>
@@ -886,6 +900,7 @@ function renderFormCategoria(cont, view) {
   });
   document.getElementById('f-cat-nome-adm').addEventListener('input', (ev) => (st.nome = ev.target.value));
   document.getElementById('f-cat-porcentagem').addEventListener('change', (ev) => (st.temPorcentagem = ev.target.checked));
+  document.getElementById('f-cat-atelie').addEventListener('change', (ev) => (st.vaiParaAtelie = ev.target.checked));
 
   document.getElementById('btn-salvar-categoria').addEventListener('click', async () => {
     const btn = document.getElementById('btn-salvar-categoria');
@@ -897,9 +912,9 @@ function renderFormCategoria(cont, view) {
       await comTimeout(
         (async () => {
           if (editando) {
-            await Categorias.atualizar(st.editId, { nome: st.nome, temPorcentagem: st.temPorcentagem });
+            await Categorias.atualizar(st.editId, { nome: st.nome, temPorcentagem: st.temPorcentagem, vaiParaAtelie: st.vaiParaAtelie });
           } else {
-            await Categorias.criar(st.nome, st.temPorcentagem);
+            await Categorias.criar(st.nome, st.temPorcentagem, st.vaiParaAtelie);
           }
           st.formAberto = false;
           renderAdminCategorias(cont, view);
@@ -933,8 +948,9 @@ async function contarPendencias() {
     planoCorte: planoCorte.filter((p) => p.aprovado === 'pendente').length,
     mkt: produtosMkt.filter((p) => p.aprovado === 'pendente').length,
     materiais: materiais.filter((m) => m.aprovado === 'pendente').length + categoriasMat.filter((c) => c.aprovado === 'pendente').length,
+    atelie: servicos.filter((s) => s.atelieSolicitacao).length,
   };
-  pendencias.total = pendencias.servicos + pendencias.conclusoes + pendencias.planoCorte + pendencias.mkt + pendencias.materiais;
+  pendencias.total = pendencias.servicos + pendencias.conclusoes + pendencias.planoCorte + pendencias.mkt + pendencias.materiais + pendencias.atelie;
   return pendencias;
 }
 

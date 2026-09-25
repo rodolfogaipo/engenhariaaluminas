@@ -808,3 +808,10 @@ a { color: var(--brand-700); }
 .mat-fotos img { object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; background: var(--paper-dim); }
 .rp-mat-foto { width: 16mm; padding: 1mm !important; }
 .rp-mat-foto img { width: 14mm; height: 14mm; object-fit: cover; border-radius: 1mm; display: block; }
+
+/* Ateliê */
+.atelie-item--pedido { background: var(--warn-bg); }
+.atelie-pedido { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-m); background: var(--surface); border: 1px dashed var(--warn-fg); font-size: 13.5px; }
+.atelie-editor { margin-top: 10px; padding: 12px; border-radius: var(--radius-m); background: var(--surface-sunken); border: 1px solid var(--line); }
+.chip small { font-weight: 500; opacity: .75; margin-left: 3px; }
+.atelie-item .sel-pdf { margin-top: 3px; }

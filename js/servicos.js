@@ -136,6 +136,8 @@ function servicoVisivelPara(s, userId) {
 }
 
 async function atualizarListaServicos(view) {
+  // categorias que vão pro Ateliê (etiqueta com a situação em cada serviço)
+  const [catsAtelie, inicioAtelie] = await Promise.all([Atelie.nomesCategorias(), Atelie.inicio()]);
   const user = Auth.current;
   const todos = await DB.getAll('servicos');
 
@@ -203,6 +205,9 @@ async function atualizarListaServicos(view) {
               ? '<span class="badge badge--ok">Aprovado</span>'
               : '<span class="badge badge--warn">Pendente</span>';
           const acaoLabel = s.acao ? ` · ${s.acao}` : '';
+          const seloAtelie = catsAtelie.has(s.tipo)
+            ? `${Atelie.selo(Atelie.situacao(s, inicioAtelie), 'Ateliê: ')}${s.atelieSolicitacao ? ' <span class="badge badge--warn">pedido de mudança</span>' : ''}`
+            : '';
           const aprovBtn =
             user.tipo === 'admin' && s.aprovado !== 'aprovado'
               ? `<button class="btn btn--ghost" data-aprovar="${s.id}" style="padding:6px 12px; font-size:13px">Aprovar</button>`
@@ -299,6 +304,7 @@ async function atualizarListaServicos(view) {
             </div>
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
               ${statusBadge}
+              ${seloAtelie}
               ${disponivelBadge}
               ${emAndamentoBadge}
               ${concluidoBadge}
