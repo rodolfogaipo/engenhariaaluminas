@@ -85,6 +85,7 @@ const Categorias = {
   },
 
   async atualizar(id, { nome, temPorcentagem }) {
+    let nomeAntigo = null;
     const cat = await DB.get('categorias_servico', id);
     if (!cat) throw new Error('Categoria não encontrada.');
 
@@ -94,16 +95,28 @@ const Categorias = {
     if (!cat.sistema && nome !== undefined) {
       const nomeLimpo = (nome || '').trim();
       if (!nomeLimpo) throw new Error('Digite o nome da categoria.');
-      if (nomeLimpo.toLowerCase() !== cat.nome.toLowerCase()) {
+      // compara o texto exato: trocar só maiúscula/minúscula
+      // ("CADASTRO OUTLINE" → "Cadastro Outline") também é uma mudança
+      if (nomeLimpo !== cat.nome) {
         const itens = await DB.getAll('categorias_servico');
         if (itens.some((c) => c.id !== id && c.nome.toLowerCase() === nomeLimpo.toLowerCase())) {
           throw new Error('Já existe uma categoria com esse nome.');
         }
+        nomeAntigo = cat.nome;
         cat.nome = nomeLimpo;
       }
     }
     cat.temPorcentagem = !!temPorcentagem;
     await DB.put('categorias_servico', cat);
+
+    // os serviços guardam o NOME da categoria — leva o nome novo pra
+    // eles, senão ficariam presos no nome antigo
+    if (nomeAntigo) {
+      const servicos = await DB.getAll('servicos');
+      const afetados = servicos.filter((s) => s.tipo === nomeAntigo);
+      afetados.forEach((s) => (s.tipo = cat.nome));
+      if (afetados.length) await DB.putMany('servicos', afetados);
+    }
     return cat;
   },
 
