@@ -491,6 +491,7 @@ function criarEstadoFormularioVazio() {
     anexos: [],
     material: null, // { id, nome, tipo, largura } — só Corte Tecido/Tela/Couro
     materialBusca: '',
+    movel: '', // categorias do Ateliê: a qual móvel a peça pertence
     erro: '',
   };
 }
@@ -519,6 +520,7 @@ function criarEstadoFormularioEdicao(registro) {
     dataFinalAdmin: dataParaInputDate(registro.dataFinal),
     anexos: registro.anexos ? [...registro.anexos] : [],
     tipoOriginal: registro.tipo,
+    movel: registro.movel || '',
     material: registro.materialNome
       ? { id: registro.materialId || null, nome: registro.materialNome, tipo: registro.materialTipo || null, largura: registro.materialLargura ?? null }
       : null,
@@ -538,6 +540,9 @@ async function renderServicoForm(view) {
   const ehCorteComAproveitamento = Categorias.temPorcentagem(categoriasCache, st.tipo);
   await Materiais.listarCategorias(); // categorias de material são livres (aba Materiais)
   const tipoMaterial = Materiais.tipoDaCategoria(st.tipo);
+  const catAtual = categoriasCache.find((c) => c.nome === st.tipo);
+  const vaiParaAtelie = !!(catAtual && catAtual.vaiParaAtelie);
+  const moveisConhecidos = vaiParaAtelie ? await Atelie.nomesMoveis() : [];
   const ehAdmin = Auth.isAdmin();
   if (ehAdmin) {
     funcionariosCache = await DB.getAll('usuarios'); // inclui o próprio Admin, pra ele poder se atribuir serviços e aparecer em "Minha Produção"
@@ -571,6 +576,19 @@ async function renderServicoForm(view) {
       </div>
 
       <div id="bloco-nome"></div>
+
+      ${
+        vaiParaAtelie
+          ? `<div class="field">
+              <label for="f-movel">Móvel (opcional — pro Ateliê juntar as peças certas)</label>
+              <input id="f-movel" list="lista-moveis-atelie" value="${escapeHtml(st.movel || '')}" placeholder="Ex: POLTRONA CHLÔE — comece a digitar pra ver os que já existem" autocomplete="off" />
+              <datalist id="lista-moveis-atelie">
+                ${moveisConhecidos.map((m) => `<option value="${escapeHtml(m)}"></option>`).join('')}
+              </datalist>
+              <div class="row__meta" style="margin-top:6px">Deixe vazio pra o app descobrir pelo nome da peça. Preencha quando o nome for só "ASSENTO", "ENCOSTO II"…</div>
+            </div>`
+          : ''
+      }
 
       ${tipoMaterial ? '<div id="bloco-material"></div>' : ''}
 
@@ -724,6 +742,8 @@ async function renderServicoForm(view) {
   }
 
   renderBlocoNome(view, ehCadastro);
+  const movelInput = document.getElementById('f-movel');
+  if (movelInput) movelInput.addEventListener('input', () => (st.movel = movelInput.value));
   if (tipoMaterial) renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis);
 
   document.getElementById('btn-salvar-servico').addEventListener('click', () => salvarServicoComTratamentoDeErro(view));
@@ -1082,6 +1102,7 @@ async function salvarServico(view) {
     // tipo sem % de aproveitamento não guarda % (ex: trocou de Corte Tecido pra CNP)
     registro.percentualAproveitamento = ehCorte ? percentual : null;
     aplicarMaterialNoRegistro(registro, st);
+    aplicarMovelNoRegistro(registro, st);
     if (user.tipo === 'admin') registro.anexos = st.anexos;
 
     if (user.tipo === 'admin') {
@@ -1181,6 +1202,7 @@ async function salvarServico(view) {
     criadoEm: Date.now(),
   };
   aplicarMaterialNoRegistro(registro, st);
+  aplicarMovelNoRegistro(registro, st);
 
   await DB.put('servicos', registro);
   if (registro.tipo === 'CNP') await criarPlanoCorteParaCNP(registro);
@@ -1192,6 +1214,12 @@ function fotoMiniMaterial(m) {
   const foto = m && (m.imagens || []).find((im) => im.linkImagem);
   if (!foto) return '';
   return `<img src="${foto.linkImagem}" alt="" referrerpolicy="no-referrer" style="width:40px; height:40px; object-fit:cover; border-radius:6px; border:1px solid var(--line); flex:0 0 auto" />`;
+}
+
+function aplicarMovelNoRegistro(registro, st) {
+  const cat = categoriasCache.find((c) => c.nome === registro.tipo);
+  const m = String(st.movel || '').trim();
+  registro.movel = cat && cat.vaiParaAtelie && m ? m : null;
 }
 
 function aplicarMaterialNoRegistro(registro, st) {

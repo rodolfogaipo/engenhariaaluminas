@@ -815,3 +815,9 @@ a { color: var(--brand-700); }
 .atelie-editor { margin-top: 10px; padding: 12px; border-radius: var(--radius-m); background: var(--surface-sunken); border: 1px solid var(--line); }
 .chip small { font-weight: 500; opacity: .75; margin-left: 3px; }
 .atelie-item .sel-pdf { margin-top: 3px; }
+
+/* Ateliê — ver por móvel */
+.atelie-movel { padding: 16px 18px; }
+.atelie-pecas { margin: 12px -18px -16px; border-top: 1px solid var(--line); }
+.atelie-pecas .atelie-item { background: var(--surface-sunken); }
+.atelie-movel--sem { border: 1px dashed var(--warn-fg); background: var(--warn-bg); }

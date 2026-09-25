@@ -922,6 +922,10 @@ function paginarRelatorio(root, blocos, cab) {
   novaPagina();
 
   blocos.forEach((b) => {
+    if (b.tipo === 'quebra') {
+      if (corpo.children.length) novaPagina();
+      return;
+    }
     if (b.tipo === 'titulo' || b.tipo === 'html') {
       const el = paraElemento(b.html);
       if (b.tipo === 'titulo') el.classList.add('rp-bloco--titulo');
