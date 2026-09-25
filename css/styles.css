@@ -795,3 +795,10 @@ a { color: var(--brand-700); }
 .rel-cat-grid small { color: var(--ink-faint); font-weight: 600; margin-left: 4px; }
 .rel-cat--vazia { opacity: .55; }
 .rel-cat-conta { font-weight: 600; color: var(--brand-700); margin-left: 6px; }
+
+/* PDFs de Avisos / Treino / Materiais / Raio-X */
+.sel-pdf { width: 20px; height: 20px; flex: 0 0 auto; margin-top: 2px; accent-color: var(--brand-700); cursor: pointer; }
+.rp-texto { font-size: 9.5pt; line-height: 1.5; margin: 0; color: var(--ink); }
+.rp-separador { height: 0; border-top: 0.3mm dashed var(--line); margin: 1mm 0 2mm; }
+.rp-link a { color: var(--brand-700); font-weight: 600; }
+.rp-caixas--4 { grid-template-columns: repeat(4, 1fr); }

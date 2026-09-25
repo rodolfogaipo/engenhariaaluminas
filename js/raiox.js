@@ -136,7 +136,7 @@ async function renderRaioX(view) {
   const doPeriodo = Analise.filtrar(itensTodos, { inicio: periodo.inicio, fim: periodo.fim });
 
   if (st.modo === 'comparar' && ehAdmin) {
-    return renderRaioXComparar(cont, view, funcionarios, doPeriodo, itensTodos);
+    return renderRaioXComparar(cont, view, funcionarios, doPeriodo, itensTodos, periodo);
   }
   return renderRaioXIndividual(cont, view, st.funcionarioId, doPeriodo, itensTodos, periodo);
 }
@@ -235,6 +235,10 @@ async function renderRaioXIndividual(cont, view, funcionarioId, doPeriodo, itens
     </div>
   `;
 
+  ligarPdfRaioX(cont, () =>
+    montarPdfRaioXIndividual({ pessoa, periodo, totais, categorias, faixas, serieErros, serieNovos, totalErrosJanela, totalNovosJanela, totalQtdJanela })
+  );
+
   cont.querySelectorAll('[data-rx-semanas]').forEach((btn) =>
     btn.addEventListener('click', () => {
       st.semanasQualidade = Number(btn.dataset.rxSemanas);
@@ -245,7 +249,7 @@ async function renderRaioXIndividual(cont, view, funcionarioId, doPeriodo, itens
 
 /* ---------------- COMPARAR EQUIPE (só Admin) ---------------- */
 
-async function renderRaioXComparar(cont, view, funcionarios, doPeriodo, itensTodos) {
+async function renderRaioXComparar(cont, view, funcionarios, doPeriodo, itensTodos, periodo) {
   const st = RaioXView;
   const categorias = Analise.porCategoria(doPeriodo).map((c) => c.categoria);
   const porFunc = funcionarios.map((f) => {
@@ -340,10 +344,177 @@ async function renderRaioXComparar(cont, view, funcionarios, doPeriodo, itensTod
     </div>
   `;
 
+  ligarPdfRaioX(cont, () => montarPdfRaioXComparar({ periodo, categorias, porFunc, faixas, seriesQualidade, doPeriodo }));
+
   cont.querySelectorAll('[data-rx-semanas]').forEach((btn) =>
     btn.addEventListener('click', () => {
       st.semanasQualidade = Number(btn.dataset.rxSemanas);
       renderRaioX(view);
     })
   );
+}
+
+
+/* ---------------- PDF DO RAIO-X ----------------
+   Sai exatamente o que está na tela: a pessoa (ou a comparação da
+   equipe, só Admin) no período escolhido, com o Painel de Qualidade. */
+
+function ligarPdfRaioX(cont, montar) {
+  const bloco = document.createElement('div');
+  bloco.innerHTML = `
+    <div class="card" style="margin-top:16px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
+      <div>
+        <b style="font-size:14px">PDF deste Raio-X</b>
+        <div class="row__meta" id="rx-pdf-status">Sai o que está na tela, no período escolhido. Na impressão, escolha "Salvar como PDF".</div>
+      </div>
+      <div style="display:flex; gap:8px">
+        <button class="btn btn--ghost" id="rx-pdf-ver" style="padding:8px 14px; font-size:13px">Visualizar</button>
+        <button class="btn btn--primary" id="rx-pdf" style="padding:8px 14px; font-size:13px">Gerar PDF</button>
+      </div>
+    </div>
+    <div id="rx-previa"></div>`;
+  cont.appendChild(bloco);
+  const status = (msg) => {
+    const el = document.getElementById('rx-pdf-status');
+    if (el) el.textContent = msg;
+  };
+  document.getElementById('rx-pdf-ver').addEventListener('click', async () => {
+    status('Montando as páginas…');
+    const n = await montar();
+    mostrarPreviaRelatorio(document.getElementById('rx-previa'));
+    status(`Prévia pronta: ${n} página(s).`);
+  });
+  document.getElementById('rx-pdf').addEventListener('click', async () => {
+    status('Montando as páginas…');
+    const n = await montar();
+    status(`${n} página(s). Abrindo a impressão — escolha "Salvar como PDF".`);
+    imprimirRelatorio();
+  });
+}
+
+function linhaCategoriaPdfRaioX(c, maxQtd) {
+  return `<tr>
+    <td>${escapeHtml(c.categoria)}</td>
+    <td class="num"><b>${c.qtd}</b></td>
+    <td class="rp-barras__barra">${barraHorizontalSVG(c.qtd, maxQtd, '#7A1F2B')}</td>
+    <td class="num">${c.erros}</td>
+    <td class="num">${c.errosNovos}</td>
+    <td class="num">${c.mediaAprov != null ? formatarPct(c.mediaAprov) : '—'}</td>
+    <td class="num">${c.mediaDesp != null ? formatarPct(c.mediaDesp) : '—'}</td>
+  </tr>`;
+}
+
+async function montarPdfRaioXIndividual(d) {
+  const caixa = (valor, rotulo) => `<div class="rp-caixa"><div class="rp-caixa__v">${valor}</div><div class="rp-caixa__l">${escapeHtml(rotulo)}</div></div>`;
+  const maxQtd = Math.max(0, ...d.categorias.map((c) => c.qtd));
+  const blocos = [
+    { tipo: 'titulo', html: '<h2 class="rp-secao">Resumo</h2>' },
+    {
+      tipo: 'html',
+      html: `<div class="rp-caixas rp-caixas--4">
+        ${caixa(d.totais.qtd, 'Serviços concluídos')}
+        ${caixa(d.totais.erros, 'Erros')}
+        ${caixa(d.totais.errosNovos, 'Erros novos')}
+        ${caixa(d.totais.mediaAprov != null ? formatarPct(d.totais.mediaAprov) : '—', 'Aproveitamento médio')}
+      </div>`,
+    },
+    { tipo: 'titulo', html: '<h2 class="rp-secao">Serviços por categoria</h2><p class="rp-nota">Quantidade e qualidade de cada tipo de serviço no período.</p>' },
+  ];
+  if (d.categorias.length) {
+    blocos.push({
+      tipo: 'tabela',
+      cabecalho: '<tr><th>Categoria</th><th class="num">Qtde</th><th></th><th class="num">Erros</th><th class="num">E. novos</th><th class="num">Aprov.</th><th class="num">Desp.</th></tr>',
+      linhas: d.categorias.map((c) => linhaCategoriaPdfRaioX(c, maxQtd)),
+      classe: 'rp-barras',
+    });
+  } else {
+    blocos.push({ tipo: 'html', html: '<p class="rp-nota">Nada concluído nesse período.</p>' });
+  }
+  blocos.push({
+    tipo: 'titulo',
+    html: `<h2 class="rp-secao">Painel de Qualidade</h2><p class="rp-nota">Só Erros e Erros Novos por semana, nas últimas ${d.faixas.length} semanas — separado da produtividade.</p>`,
+  });
+  blocos.push({
+    tipo: 'html',
+    html: `<div class="rp-grafico">${graficoLinhaSVG(
+      d.faixas.map((f) => f.rotulo),
+      [
+        { nome: 'Erros', valores: d.serieErros, cor: '#7A1F2B' },
+        { nome: 'Erros novos', valores: d.serieNovos, cor: '#9A6B08', tracejado: true },
+      ],
+      { minMaximo: 2, altura: 190, largura: 640 }
+    )}<p class="rp-nota" style="text-align:center">${d.totalErrosJanela} erro(s) e ${d.totalNovosJanela} erro(s) novo(s) em ${d.totalQtdJanela} serviço(s)${
+      d.totalQtdJanela ? ` · ${formatarNumero((d.totalErrosJanela + d.totalNovosJanela) / d.totalQtdJanela, 2)} por serviço` : ''
+    }</p></div>`,
+  });
+  return montarPdfPadrao(blocos, {
+    titulo: `Raio-X — ${d.pessoa ? d.pessoa.nome : 'Funcionário'}`,
+    periodo: d.periodo.rotulo,
+    detalhes: 'Produção por categoria e qualidade',
+  });
+}
+
+async function montarPdfRaioXComparar(d) {
+  const blocos = [
+    { tipo: 'titulo', html: '<h2 class="rp-secao">Serviços por categoria — equipe</h2><p class="rp-nota">Quantidade de cada categoria, por pessoa.</p>' },
+  ];
+  const top = d.categorias.slice(0, 10);
+  if (top.length) {
+    blocos.push({
+      tipo: 'html',
+      html: `<div class="rp-grafico">${barrasAgrupadasSVG(
+        top,
+        d.porFunc.map((p, i) => ({ nome: primeiroNome(p.f.nome), cor: corDaSerie(i), valores: top.map((c) => (p.mapaCat[c] ? p.mapaCat[c].qtd : 0)) })),
+        { rotulosInclinados: true, largura: 640, altura: 230 }
+      )}</div>`,
+    });
+    blocos.push({
+      tipo: 'tabela',
+      cabecalho: `<tr><th>Categoria</th>${d.porFunc.map((p) => `<th class="num">${escapeHtml(primeiroNome(p.f.nome))}</th>`).join('')}<th class="num">Total</th></tr>`,
+      linhas: [
+        ...d.categorias.map(
+          (c) =>
+            `<tr><td>${escapeHtml(c)}</td>${d.porFunc.map((p) => `<td class="num">${p.mapaCat[c] ? p.mapaCat[c].qtd : 0}</td>`).join('')}<td class="num"><b>${d.porFunc.reduce(
+              (s, p) => s + (p.mapaCat[c] ? p.mapaCat[c].qtd : 0),
+              0
+            )}</b></td></tr>`
+        ),
+        `<tr class="rp-grupo"><td>Total</td>${d.porFunc.map((p) => `<td class="num">${p.totais.qtd}</td>`).join('')}<td class="num">${d.porFunc.reduce((s, p) => s + p.totais.qtd, 0)}</td></tr>`,
+      ],
+      classe: '',
+    });
+  } else {
+    blocos.push({ tipo: 'html', html: '<p class="rp-nota">Nada concluído nesse período.</p>' });
+  }
+  blocos.push({ tipo: 'titulo', html: '<h2 class="rp-secao">Qualidade — equipe</h2><p class="rp-nota">Erros, erros novos e aproveitamento no período.</p>' });
+  blocos.push({
+    tipo: 'tabela',
+    cabecalho:
+      '<tr><th>Funcionário</th><th class="num">Serviços</th><th class="num">Erros</th><th class="num">Erros novos</th><th class="num">Erros / serviço</th><th class="num">Aprov.</th><th class="num">Desp.</th></tr>',
+    linhas: d.porFunc.map(
+      (p) => `<tr>
+        <td>${escapeHtml(p.f.nome)}</td>
+        <td class="num">${p.totais.qtd}</td>
+        <td class="num">${p.totais.erros}</td>
+        <td class="num">${p.totais.errosNovos}</td>
+        <td class="num">${p.totais.qtd ? formatarNumero((p.totais.erros + p.totais.errosNovos) / p.totais.qtd, 2) : '—'}</td>
+        <td class="num">${formatarPct(p.totais.mediaAprov)}</td>
+        <td class="num">${p.totais.mediaAprov != null ? formatarPct(100 - p.totais.mediaAprov) : '—'}</td>
+      </tr>`
+    ),
+    classe: '',
+  });
+  blocos.push({
+    tipo: 'html',
+    html: `<div class="rp-grafico"><div class="rp-grafico__titulo">Erros + erros novos por semana (últimas ${d.faixas.length})</div>${graficoLinhaSVG(
+      d.faixas.map((f) => f.rotulo),
+      d.seriesQualidade,
+      { minMaximo: 2, altura: 190, largura: 640 }
+    )}</div>`,
+  });
+  return montarPdfPadrao(blocos, {
+    titulo: 'Raio-X — Comparação da equipe',
+    periodo: d.periodo.rotulo,
+    detalhes: 'Produção por categoria e qualidade, lado a lado',
+  });
 }

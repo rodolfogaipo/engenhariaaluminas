@@ -9,6 +9,9 @@ const TreinoView = {
   subView: 'lista', // 'lista' | 'form'
   formState: null,
   filtroTexto: '',
+  modoSelecao: false, // "Selecionar para PDF"
+  selecionados: new Set(),
+  _visiveis: [],
 };
 
 function normalizaBuscaTreino(s) {
@@ -46,13 +49,24 @@ async function renderTreinoLista(view) {
         <h2 class="section-title" style="margin-bottom:2px">Treinamento</h2>
         <p class="section-sub" style="margin:0">Padrões de desenho e tutoriais de ferramentas</p>
       </div>
-      ${Auth.isAdmin() ? '<button class="btn btn--primary" id="btn-novo-treino">+ Novo Conteúdo</button>' : ''}
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        ${botaoSelecaoPdf(TreinoView, 'btn-selecao-treino')}
+        ${Auth.isAdmin() ? '<button class="btn btn--primary" id="btn-novo-treino">+ Novo Conteúdo</button>' : ''}
+      </div>
     </div>
     <div class="field" style="margin-bottom:20px">
       <input id="busca-treino" placeholder="Buscar por título, descrição ou nome do anexo…" value="${escapeHtml(TreinoView.filtroTexto)}" />
     </div>
+    <div id="barra-treino"></div>
     <div id="lista-treino"></div>
+    <div id="treino-previa"></div>
   `;
+
+  document.getElementById('btn-selecao-treino').addEventListener('click', () => {
+    TreinoView.modoSelecao = !TreinoView.modoSelecao;
+    if (!TreinoView.modoSelecao) TreinoView.selecionados.clear();
+    renderTreinoLista(view);
+  });
 
   const buscaInput = document.getElementById('busca-treino');
   buscaInput.addEventListener('input', () => {
@@ -87,6 +101,21 @@ async function atualizarListaTreino(view) {
 
   const listaEl = document.getElementById('lista-treino');
   if (!listaEl) return;
+
+  TreinoView._visiveis = ordenados.map((t) => t.id);
+  renderBarraSelecaoPdf({
+    contId: 'barra-treino',
+    previaId: 'treino-previa',
+    estado: TreinoView,
+    todosIds: todos.map((t) => t.id),
+    singular: 'conteúdo',
+    plural: 'conteúdos',
+    dica: 'Marque as caixinhas dos conteúdos que vão no PDF.',
+    montar: (ids) =>
+      montarPdfTreino(todos.filter((t) => ids.includes(t.id)).sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0))),
+    aoMudar: () => atualizarListaTreino(view),
+  });
+
   if (ordenados.length === 0 && todos.length > 0) {
     listaEl.innerHTML = `
       <div class="card">
@@ -135,6 +164,7 @@ async function atualizarListaTreino(view) {
       return `
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap">
+          ${caixinhaPdf(TreinoView, t.id)}
           <div style="flex:1 1 200px">
             <div class="row__title" style="font-size:15.5px">${escapeHtml(t.titulo)}</div>
             <div class="row__meta" style="margin-top:6px; white-space:pre-wrap">${escapeHtml(t.descricao || '')}</div>
@@ -153,6 +183,8 @@ async function atualizarListaTreino(view) {
       </div>`;
     })
     .join('');
+
+  ligarCaixinhasPdf(listaEl, TreinoView, () => atualizarListaTreino(view));
 
   if (!Auth.isAdmin()) return;
 
@@ -320,4 +352,50 @@ function voltarParaListaTreino() {
   TreinoView.subView = 'lista';
   TreinoView.formState = null;
   renderView('treino');
+}
+
+
+/* ---------------- PDF DO TREINAMENTO ----------------
+   Cada conteúdo: título, data, descrição (em parágrafos, que quebram
+   de página), fotos inteiras e a lista dos outros anexos (PDF, vídeo…)
+   com o link — no PDF gerado, o link é clicável. */
+
+async function montarPdfTreino(conteudos) {
+  const blocos = [];
+  const fotoHtml = (a) => `<div class="rp-foto"><img src="${a.linkImagem}" alt="" referrerpolicy="no-referrer" /></div>`;
+  conteudos.forEach((t) => {
+    const imagens = (t.anexos || []).filter((a) => a.tipo === 'imagem' && a.linkImagem);
+    const outros = (t.anexos || []).filter((a) => a.tipo !== 'imagem');
+    blocos.push({
+      tipo: 'titulo',
+      html: `<h2 class="rp-secao">${escapeHtml(t.titulo || '(sem título)')}</h2>${
+        t.criadoEm ? `<p class="rp-nota">Publicado em ${Const.formatarData(t.criadoEm)}</p>` : ''
+      }`,
+    });
+    blocos.push(...paragrafosPdf(t.descricao));
+    for (let i = 0; i < imagens.length; i += 8) {
+      blocos.push({ tipo: 'html', html: `<div class="rp-produto__fotos rp-produto__fotos--largo">${imagens.slice(i, i + 8).map(fotoHtml).join('')}</div>` });
+    }
+    if (outros.length) {
+      blocos.push({
+        tipo: 'tabela',
+        cabecalho: '<tr><th>Anexo</th><th>Tipo</th><th class="num">Tamanho</th><th>Link</th></tr>',
+        linhas: outros.map(
+          (a) => `<tr>
+            <td>${escapeHtml(a.nome || '')}</td>
+            <td class="nowrap">${escapeHtml(a.tipo === 'video' ? 'Vídeo' : a.tipo === 'pdf' ? 'PDF' : a.tipo || 'Arquivo')}</td>
+            <td class="num">${escapeHtml(formatarTamanhoArquivoTreino(a.tamanho))}</td>
+            <td class="rp-link">${a.linkBaixar || a.linkVisualizar ? `<a href="${a.linkBaixar || a.linkVisualizar}">Abrir arquivo</a>` : ''}</td>
+          </tr>`
+        ),
+        classe: '',
+      });
+    }
+    blocos.push({ tipo: 'html', html: '<div class="rp-separador"></div>' });
+  });
+  return montarPdfPadrao(blocos, {
+    titulo: 'Treinamento',
+    periodo: `${conteudos.length} conteúdo${conteudos.length === 1 ? '' : 's'}`,
+    detalhes: 'Padrões de desenho e tutoriais de ferramentas',
+  });
 }

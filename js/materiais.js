@@ -12,6 +12,9 @@ const MateriaisView = {
   filtroTexto: '',
   filtroTipo: '',
   formState: null,
+  modoSelecao: false, // "Selecionar para PDF"
+  selecionados: new Set(),
+  _visiveis: [],
 };
 
 const Materiais = {
@@ -151,10 +154,11 @@ async function renderMateriaisLista(view) {
       ${
         ehAdmin
           ? `<div style="display:flex; gap:8px; flex-wrap:wrap">
+              ${botaoSelecaoPdf(MateriaisView, 'btn-selecao-materiais')}
               <button class="btn btn--ghost" id="btn-categorias-material">Categorias</button>
               <button class="btn btn--primary" id="btn-novo-material">+ Novo Material</button>
             </div>`
-          : ''
+          : botaoSelecaoPdf(MateriaisView, 'btn-selecao-materiais')
       }
     </div>
 
@@ -168,8 +172,16 @@ async function renderMateriaisLista(view) {
       ).join('')}
     </div>
 
+    <div id="barra-materiais"></div>
     <div id="lista-materiais"></div>
+    <div id="materiais-previa"></div>
   `;
+
+  document.getElementById('btn-selecao-materiais').addEventListener('click', () => {
+    MateriaisView.modoSelecao = !MateriaisView.modoSelecao;
+    if (!MateriaisView.modoSelecao) MateriaisView.selecionados.clear();
+    renderMateriaisLista(view);
+  });
 
   // se o filtro era uma categoria que foi renomeada/excluída, volta pra "Todos"
   if (MateriaisView.filtroTipo && !Materiais.nomesCategorias().includes(MateriaisView.filtroTipo)) {
@@ -230,6 +242,19 @@ async function atualizarListaMateriais(view) {
   const listaEl = document.getElementById('lista-materiais');
   if (!listaEl) return;
 
+  MateriaisView._visiveis = filtrados.map((m) => m.id);
+  renderBarraSelecaoPdf({
+    contId: 'barra-materiais',
+    previaId: 'materiais-previa',
+    estado: MateriaisView,
+    todosIds: todos.map((m) => m.id),
+    singular: 'material',
+    plural: 'materiais',
+    dica: 'Marque as caixinhas (ou "Marcar todos da busca") dos materiais que vão no PDF.',
+    montar: (ids) => montarPdfMateriais(todos.filter((m) => ids.includes(m.id)), usos),
+    aoMudar: () => atualizarListaMateriais(view),
+  });
+
   if (filtrados.length === 0) {
     listaEl.innerHTML = `
       <div class="card">
@@ -253,6 +278,7 @@ async function atualizarListaMateriais(view) {
         .map(
           (m) => `
         <div class="row" style="padding:14px 18px; flex-wrap:wrap">
+          ${caixinhaPdf(MateriaisView, m.id)}
           <div class="row__main" style="flex:1 1 200px">
             <div class="row__title">${escapeHtml(m.nome)}${Materiais.seloPendente(m)}</div>
             <div class="row__meta">${escapeHtml(m.tipo || '—')} · Largura: <b>${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</b>${usos[m.id] ? ` · usado em ${usos[m.id]} serviço(s)` : ''}</div>
@@ -273,6 +299,8 @@ async function atualizarListaMateriais(view) {
     </div>
     <div class="row__meta" style="text-align:center; margin-top:10px">${filtrados.length} material(is)</div>
   `;
+
+  ligarCaixinhasPdf(listaEl, MateriaisView, () => atualizarListaMateriais(view));
 
   listaEl.querySelectorAll('[data-aprovar-material]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -645,6 +673,46 @@ async function renderCategoriasMaterial(view) {
       renderCategoriasMaterial(view);
     });
   }
+}
+
+/* ---------------- PDF DOS MATERIAIS ----------------
+   Tabela agrupada por categoria (A→Z), com a largura. */
+
+async function montarPdfMateriais(materiais, usos) {
+  const ordenados = [...materiais].sort(
+    (a, b) => (a.tipo || '').localeCompare(b.tipo || '', 'pt-BR') || (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { numeric: true })
+  );
+  const porCat = {};
+  ordenados.forEach((m) => (porCat[m.tipo || '—'] = (porCat[m.tipo || '—'] || 0) + 1));
+  const linhas = [];
+  let atual = null;
+  ordenados.forEach((m) => {
+    const cat = m.tipo || '—';
+    if (cat !== atual) {
+      atual = cat;
+      linhas.push(`<tr class="rp-grupo"><td colspan="4">${escapeHtml(cat)} — ${porCat[cat]} material(is)</td></tr>`);
+    }
+    linhas.push(`<tr>
+      <td>${escapeHtml(m.nome)}${m.aprovado === 'pendente' ? ' <span class="rp-fraco">(pendente)</span>' : ''}</td>
+      <td class="num">${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</td>
+      <td>${escapeHtml(m.observacao || '')}</td>
+      <td class="num">${usos && usos[m.id] ? usos[m.id] : 0}</td>
+    </tr>`);
+  });
+  const blocos = [
+    { tipo: 'titulo', html: `<h2 class="rp-secao">Materiais</h2><p class="rp-nota">${ordenados.length} material(is) em ${Object.keys(porCat).length} categoria(s)</p>` },
+    {
+      tipo: 'tabela',
+      cabecalho: '<tr><th>Material</th><th class="num">Largura</th><th>Observação</th><th class="num">Usado em</th></tr>',
+      linhas,
+      classe: '',
+    },
+  ];
+  return montarPdfPadrao(blocos, {
+    titulo: 'Lista de Materiais',
+    periodo: `${ordenados.length} material${ordenados.length === 1 ? '' : 'is'}`,
+    detalhes: 'Materiais com a largura, por categoria',
+  });
 }
 
 window.Materiais = Materiais;

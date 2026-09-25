@@ -31,6 +31,18 @@ const Auth = {
   },
 
   logout() {
+    // zera seleções de PDF abertas, pra não passarem pra próxima conta
+    [
+      typeof AvisosView !== 'undefined' ? AvisosView : null,
+      typeof TreinoView !== 'undefined' ? TreinoView : null,
+      typeof MateriaisView !== 'undefined' ? MateriaisView : null,
+      typeof MktView !== 'undefined' ? MktView : null,
+    ].forEach((v) => {
+      if (v && v.selecionados) {
+        v.modoSelecao = false;
+        v.selecionados.clear();
+      }
+    });
     localStorage.removeItem(SESSION_KEY);
     this.current = null;
   },

@@ -6,7 +6,7 @@
    vez de continuar usando a cópia antiga guardada no celular.
    ========================================================= */
 
-const CACHE_VERSION = 'v69';
+const CACHE_VERSION = 'v70';
 const CACHE_NAME = `controle-equipe-${CACHE_VERSION}`;
 
 const CORE_ASSETS = [
@@ -35,6 +35,7 @@ const CORE_ASSETS = [
   './js/exportar.js',
   './js/relatorio.js',
   './js/comparar.js',
+  './js/pdfselecao.js',
   './js/seed-import.js',
   './js/admin.js',
   './js/dashboard.js',

@@ -7,6 +7,9 @@
 const AvisosView = {
   subView: 'lista', // 'lista' | 'form'
   formState: null,
+  modoSelecao: false, // "Selecionar para PDF"
+  selecionados: new Set(),
+  _visiveis: [],
 };
 
 async function renderAvisos(view) {
@@ -32,12 +35,38 @@ async function renderAvisosLista(view) {
         <h2 class="section-title" style="margin-bottom:2px">Quadro de Avisos</h2>
         <p class="section-sub" style="margin:0">${user.tipo === 'admin' ? 'Gerencie os avisos da equipe' : 'Avisos e comunicados da equipe'}</p>
       </div>
-      ${Auth.isAdmin() ? '<button class="btn btn--primary" id="btn-novo-aviso">+ Novo Aviso</button>' : ''}
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        ${todos.length ? botaoSelecaoPdf(AvisosView, 'btn-selecao-avisos') : ''}
+        ${Auth.isAdmin() ? '<button class="btn btn--primary" id="btn-novo-aviso">+ Novo Aviso</button>' : ''}
+      </div>
     </div>
 
+    <div id="barra-avisos"></div>
     <div id="avisos-prazo"></div>
     <div id="lista-avisos"></div>
+    <div id="avisos-previa"></div>
   `;
+
+  const btnSel = document.getElementById('btn-selecao-avisos');
+  if (btnSel) {
+    btnSel.addEventListener('click', () => {
+      AvisosView.modoSelecao = !AvisosView.modoSelecao;
+      if (!AvisosView.modoSelecao) AvisosView.selecionados.clear();
+      renderAvisosLista(view);
+    });
+  }
+  AvisosView._visiveis = ordenados.map((a) => a.id);
+  renderBarraSelecaoPdf({
+    contId: 'barra-avisos',
+    previaId: 'avisos-previa',
+    estado: AvisosView,
+    todosIds: todos.map((a) => a.id),
+    singular: 'aviso',
+    plural: 'avisos',
+    dica: 'Marque as caixinhas dos avisos que vão no PDF.',
+    montar: (ids) => montarPdfAvisos(ordenados.filter((a) => ids.includes(a.id))),
+    aoMudar: () => renderAvisosLista(view),
+  });
 
   await renderAvisosDePrazo(document.getElementById('avisos-prazo'));
 
@@ -90,6 +119,7 @@ async function renderAvisosLista(view) {
 
           return `
           <div class="row" style="padding:14px 18px; align-items:flex-start; flex-wrap:wrap; gap:10px">
+            ${caixinhaPdf(AvisosView, a.id)}
             <div class="row__main" style="flex:1 1 220px">
               <div class="row__title" style="${a.feito ? 'text-decoration:line-through; color:var(--ink-faint)' : ''}">${escapeHtml(a.texto)}</div>
               <div class="row__meta">${dataHora}</div>
@@ -104,6 +134,8 @@ async function renderAvisosLista(view) {
         .join('')}
     </div>
   `;
+
+  ligarCaixinhasPdf(listaEl, AvisosView, () => renderAvisosLista(view));
 
   if (!Auth.isAdmin()) {
     listaEl.querySelectorAll('[data-visto]').forEach((btn) => {
@@ -330,4 +362,35 @@ async function renderAvisosDePrazo(cont) {
         : ''
     }
   `;
+}
+
+
+/* ---------------- PDF DOS AVISOS ---------------- */
+
+async function montarPdfAvisos(avisos) {
+  const ehAdmin = Auth.isAdmin();
+  const linhas = avisos.map((a) => {
+    const dataHora = Const.formatarData(a.data) + (a.hora ? ` às ${escapeHtml(a.hora)}` : '');
+    const vistos = a.vistoPor || [];
+    return `<tr>
+      <td class="nowrap">${dataHora}</td>
+      <td>${escapeHtml(a.texto || '').replace(/\n/g, '<br>')}</td>
+      <td class="nowrap ${a.feito ? '' : 'rp-ruim'}">${a.feito ? 'Feito' : 'Pendente'}</td>
+      ${ehAdmin ? `<td>${vistos.length ? vistos.map((v) => escapeHtml(nomeCurtoRelatorio(v.nome))).join(', ') : '<span class="rp-fraco">Ninguém ainda</span>'}</td>` : ''}
+    </tr>`;
+  });
+  const pendentes = avisos.filter((a) => !a.feito).length;
+  const blocos = [
+    { tipo: 'titulo', html: `<h2 class="rp-secao">Avisos</h2><p class="rp-nota">${avisos.length} aviso(s) · ${pendentes} pendente(s) · ${avisos.length - pendentes} feito(s)</p>` },
+    {
+      tipo: 'tabela',
+      cabecalho: `<tr><th>Data</th><th>Aviso</th><th>Situação</th>${ehAdmin ? '<th>Visto por</th>' : ''}</tr>`,
+      linhas,
+      classe: '',
+    },
+  ];
+  return montarPdfPadrao(blocos, {
+    titulo: 'Quadro de Avisos',
+    periodo: `${avisos.length} aviso${avisos.length === 1 ? '' : 's'}`,
+  });
 }
