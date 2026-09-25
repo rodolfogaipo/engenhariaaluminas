@@ -8,7 +8,11 @@
    - Itens da aba Corte (Plano de Corte) com Data Final Corte
    ========================================================= */
 
-const CATEGORIA_ABA_CORTE = 'Corte (aba Corte)';
+// Itens da aba Corte (vieram de uma CNP) são a MESMA categoria dos
+// serviços lançados direto como "Plano de Corte" (produto que já existia)
+// — só muda por onde entraram. Nos relatórios contam juntos; a coluna
+// "Origem" da planilha ainda diz de onde cada um veio.
+const CATEGORIA_ABA_CORTE = 'Plano de Corte';
 
 const MESES_PT = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const MESES_CURTOS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
