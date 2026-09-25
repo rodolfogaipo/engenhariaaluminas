@@ -802,3 +802,9 @@ a { color: var(--brand-700); }
 .rp-separador { height: 0; border-top: 0.3mm dashed var(--line); margin: 1mm 0 2mm; }
 .rp-link a { color: var(--brand-700); font-weight: 600; }
 .rp-caixas--4 { grid-template-columns: repeat(4, 1fr); }
+
+/* Materiais — fotos */
+.mat-fotos { display: flex; gap: 8px; flex-wrap: wrap; }
+.mat-fotos img { object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; background: var(--paper-dim); }
+.rp-mat-foto { width: 16mm; padding: 1mm !important; }
+.rp-mat-foto img { width: 14mm; height: 14mm; object-fit: cover; border-radius: 1mm; display: block; }

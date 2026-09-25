@@ -788,11 +788,14 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
       <div class="field">
         <label>${escapeHtml(tipoMaterial)} usado</label>
         <div class="card" style="background:var(--brand-100); border-color:var(--brand-500); padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
-          <div style="min-width:0">
+          <div style="min-width:0; display:flex; align-items:center; gap:10px">
+            ${fotoMiniMaterial(materiaisDisponiveis.find((x) => x.id === m.id))}
+            <div style="min-width:0">
             <div class="row__title" style="color:var(--brand-800)">${escapeHtml(m.nome)}${
               (materiaisDisponiveis.find((x) => x.id === m.id) || m).aprovado === 'pendente' || m.pendente ? ' <span class="badge badge--warn">pendente</span>' : ''
             }</div>
             <div class="row__meta">Largura: <b>${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</b>${aindaExiste ? '' : ' · não está mais na lista de Materiais'}</div>
+            </div>
           </div>
           <button class="btn btn--ghost" id="btn-trocar-material" style="padding:6px 12px; font-size:13px">Trocar</button>
         </div>
@@ -842,8 +845,9 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
         ${lista
           .map(
             (m) => `
-          <div class="row" style="padding:8px 14px">
-            <div class="row__main">
+          <div class="row" style="padding:8px 14px; justify-content:flex-start; gap:10px">
+            ${fotoMiniMaterial(m)}
+            <div class="row__main" style="flex:1">
               <div class="row__title" style="font-size:14px">${escapeHtml(m.nome)}${m.aprovado === 'pendente' ? ' <span class="badge badge--warn">pendente</span>' : ''}</div>
               <div class="row__meta">Largura: ${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</div>
             </div>
@@ -1175,6 +1179,13 @@ async function salvarServico(view) {
   await DB.put('servicos', registro);
   if (registro.tipo === 'CNP') await criarPlanoCorteParaCNP(registro);
   voltarParaLista();
+}
+
+// foto pequena do material (a 1ª), pra reconhecer o tecido/tela na hora de escolher
+function fotoMiniMaterial(m) {
+  const foto = m && (m.imagens || []).find((im) => im.linkImagem);
+  if (!foto) return '';
+  return `<img src="${foto.linkImagem}" alt="" referrerpolicy="no-referrer" style="width:40px; height:40px; object-fit:cover; border-radius:6px; border:1px solid var(--line); flex:0 0 auto" />`;
 }
 
 function aplicarMaterialNoRegistro(registro, st) {

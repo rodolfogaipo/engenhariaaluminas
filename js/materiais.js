@@ -198,6 +198,7 @@ async function renderMateriaisLista(view) {
         largura: '',
         observacao: '',
         erro: '',
+        imagens: [],
       };
       renderView('materiais');
     });
@@ -283,6 +284,7 @@ async function atualizarListaMateriais(view) {
             <div class="row__title">${escapeHtml(m.nome)}${Materiais.seloPendente(m)}</div>
             <div class="row__meta">${escapeHtml(m.tipo || '—')} · Largura: <b>${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</b>${usos[m.id] ? ` · usado em ${usos[m.id]} serviço(s)` : ''}</div>
             ${m.observacao ? `<div class="row__meta" style="font-style:italic">${escapeHtml(m.observacao)}</div>` : ''}
+            ${(m.imagens || []).length ? `<div style="margin-top:8px">${miniaturasMaterial(m.imagens, 56)}</div>` : ''}
           </div>
           ${
             Materiais.podeMexer(m) || (Auth.isAdmin() && Materiais.ehPendente(m))
@@ -333,6 +335,7 @@ async function atualizarListaMateriais(view) {
         largura: m.largura != null ? String(m.largura) : '',
         observacao: m.observacao || '',
         erro: '',
+        imagens: m.imagens ? [...m.imagens] : [],
       };
       renderView('materiais');
     });
@@ -346,7 +349,17 @@ async function atualizarListaMateriais(view) {
         ? `Esse material está em ${n} serviço(s). Os serviços continuam guardando o nome e a largura, só o material sai da lista. Excluir mesmo assim?`
         : 'Excluir este material?';
       if (!confirm(aviso)) return;
+      const mat = await DB.get('materiais', id);
       await DB.delete('materiais', id);
+      if (mat && (mat.imagens || []).length && Auth.isAdmin()) {
+        for (const img of mat.imagens) {
+          try {
+            await Drive.excluirArquivo(img.id);
+          } catch (e) {
+            console.warn('Foto não apagada do Drive:', e);
+          }
+        }
+      }
       atualizarListaMateriais(view);
     });
   });
@@ -386,6 +399,17 @@ function renderMaterialForm(view) {
         <label for="f-mat-obs">Observação (opcional)</label>
         <input id="f-mat-obs" value="${escapeHtml(st.observacao)}" placeholder="Ex: fornecedor, código, cor…" />
       </div>
+      ${
+        Auth.isAdmin()
+          ? `<div class="field">
+              <label for="f-mat-imagens">Fotos do material (opcional)</label>
+              <input id="f-mat-imagens" type="file" accept="image/*" multiple />
+              <div id="lista-imagens-mat" style="margin-top:10px"></div>
+            </div>`
+          : (st.imagens || []).length
+          ? `<div class="field"><label>Fotos do material</label>${miniaturasMaterial(st.imagens, 64)}</div>`
+          : ''
+      }
 
       <div style="display:flex; gap:10px; margin-top:8px">
         <button class="btn btn--ghost" id="btn-cancelar-material" style="flex:1">Cancelar</button>
@@ -405,6 +429,24 @@ function renderMaterialForm(view) {
   document.getElementById('f-mat-nome').addEventListener('input', (ev) => (st.nome = ev.target.value));
   document.getElementById('f-mat-largura').addEventListener('input', (ev) => (st.largura = ev.target.value));
   document.getElementById('f-mat-obs').addEventListener('input', (ev) => (st.observacao = ev.target.value));
+
+  const imagensInput = document.getElementById('f-mat-imagens');
+  if (imagensInput) {
+    imagensInput.addEventListener('change', async (ev) => {
+      const arquivos = Array.from(ev.target.files || []);
+      if (arquivos.length === 0) return;
+      imagensInput.disabled = true;
+      document.getElementById('btn-salvar-material').disabled = true;
+      const cont = document.getElementById('lista-imagens-mat');
+      const { enviados, erros } = await Drive.enviarVarios(arquivos, (feitos, total) => {
+        if (cont) cont.innerHTML = `<div class="row__meta">Enviando pro Google Drive: ${feitos} de ${total} pronto(s)… aguarde antes de Salvar</div>`;
+      });
+      st.imagens = [...(st.imagens || []), ...enviados];
+      if (erros.length) st.erro = erros.map((e) => `Não consegui enviar "${e.nome}": ${e.mensagem}`).join(' ');
+      renderMaterialForm(view);
+    });
+    renderListaImagensMaterial(view);
+  }
 
   document.getElementById('btn-salvar-material').addEventListener('click', async () => {
     const nome = (st.nome || '').trim();
@@ -457,6 +499,7 @@ function renderMaterialForm(view) {
           registro.tipo = st.tipo;
           registro.largura = largura;
           registro.observacao = (st.observacao || '').trim();
+          if (Auth.isAdmin()) registro.imagens = st.imagens || [];
           registro.atualizadoEm = Date.now();
           await DB.put('materiais', registro);
 
@@ -679,6 +722,7 @@ async function renderCategoriasMaterial(view) {
    Tabela agrupada por categoria (A→Z), com a largura. */
 
 async function montarPdfMateriais(materiais, usos) {
+  const comFoto = materiais.some((m) => (m.imagens || []).length);
   const ordenados = [...materiais].sort(
     (a, b) => (a.tipo || '').localeCompare(b.tipo || '', 'pt-BR') || (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { numeric: true })
   );
@@ -690,9 +734,11 @@ async function montarPdfMateriais(materiais, usos) {
     const cat = m.tipo || '—';
     if (cat !== atual) {
       atual = cat;
-      linhas.push(`<tr class="rp-grupo"><td colspan="4">${escapeHtml(cat)} — ${porCat[cat]} material(is)</td></tr>`);
+      linhas.push(`<tr class="rp-grupo"><td colspan="${comFoto ? 5 : 4}">${escapeHtml(cat)} — ${porCat[cat]} material(is)</td></tr>`);
     }
+    const foto = (m.imagens || []).find((im) => im.linkImagem);
     linhas.push(`<tr>
+      ${comFoto ? `<td class="rp-mat-foto">${foto ? `<img src="${foto.linkImagem}" alt="" referrerpolicy="no-referrer" />` : ''}</td>` : ''}
       <td>${escapeHtml(m.nome)}${m.aprovado === 'pendente' ? ' <span class="rp-fraco">(pendente)</span>' : ''}</td>
       <td class="num">${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</td>
       <td>${escapeHtml(m.observacao || '')}</td>
@@ -703,7 +749,7 @@ async function montarPdfMateriais(materiais, usos) {
     { tipo: 'titulo', html: `<h2 class="rp-secao">Materiais</h2><p class="rp-nota">${ordenados.length} material(is) em ${Object.keys(porCat).length} categoria(s)</p>` },
     {
       tipo: 'tabela',
-      cabecalho: '<tr><th>Material</th><th class="num">Largura</th><th>Observação</th><th class="num">Usado em</th></tr>',
+      cabecalho: `<tr>${comFoto ? '<th>Foto</th>' : ''}<th>Material</th><th class="num">Largura</th><th>Observação</th><th class="num">Usado em</th></tr>`,
       linhas,
       classe: '',
     },
@@ -712,6 +758,55 @@ async function montarPdfMateriais(materiais, usos) {
     titulo: 'Lista de Materiais',
     periodo: `${ordenados.length} material${ordenados.length === 1 ? '' : 'is'}`,
     detalhes: 'Materiais com a largura, por categoria',
+  });
+}
+
+/* ---------------- FOTOS DO MATERIAL ---------------- */
+
+// miniaturas clicáveis (abre a foto grande no Drive)
+function miniaturasMaterial(imagens, tamanho) {
+  const lista = (imagens || []).filter((im) => im.linkImagem);
+  if (!lista.length) return '';
+  return `<div class="mat-fotos">${lista
+    .map(
+      (im) => `<a href="${im.linkVisualizar || im.linkImagem}" target="_blank" rel="noopener" title="${escapeHtml(im.nome || '')}">
+        <img src="${im.linkImagem}" alt="${escapeHtml(im.nome || '')}" referrerpolicy="no-referrer" style="width:${tamanho}px; height:${tamanho}px" />
+      </a>`
+    )
+    .join('')}</div>`;
+}
+
+function renderListaImagensMaterial(view) {
+  const st = MateriaisView.formState;
+  const cont = document.getElementById('lista-imagens-mat');
+  if (!cont || !st) return;
+  if (!st.imagens || st.imagens.length === 0) {
+    cont.innerHTML = '<div class="row__meta">Nenhuma foto ainda.</div>';
+    return;
+  }
+  cont.innerHTML = `
+    <div style="display:flex; gap:10px; flex-wrap:wrap">
+      ${st.imagens
+        .map(
+          (img) => `
+        <div style="position:relative">
+          <img src="${img.linkImagem}" alt="${escapeHtml(img.nome || '')}" referrerpolicy="no-referrer" style="width:80px; height:80px; object-fit:cover; border-radius:8px; border:1px solid var(--line)" />
+          <button data-remover-imagem-mat="${img.id}" aria-label="Remover foto" style="position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:50%; background:var(--danger-fg); color:#fff; font-size:14px; line-height:1; display:flex; align-items:center; justify-content:center">×</button>
+        </div>`
+        )
+        .join('')}
+    </div>`;
+  cont.querySelectorAll('[data-remover-imagem-mat]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.removerImagemMat;
+      try {
+        await Drive.excluirArquivo(id);
+      } catch (e) {
+        console.warn('Foto não apagada do Drive:', e);
+      }
+      st.imagens = st.imagens.filter((img) => img.id !== id);
+      renderListaImagensMaterial(view);
+    });
   });
 }
 
