@@ -789,7 +789,9 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
         <label>${escapeHtml(tipoMaterial)} usado</label>
         <div class="card" style="background:var(--brand-100); border-color:var(--brand-500); padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
           <div style="min-width:0">
-            <div class="row__title" style="color:var(--brand-800)">${escapeHtml(m.nome)}</div>
+            <div class="row__title" style="color:var(--brand-800)">${escapeHtml(m.nome)}${
+              (materiaisDisponiveis.find((x) => x.id === m.id) || m).aprovado === 'pendente' || m.pendente ? ' <span class="badge badge--warn">pendente</span>' : ''
+            }</div>
             <div class="row__meta">Largura: <b>${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</b>${aindaExiste ? '' : ' · não está mais na lista de Materiais'}</div>
           </div>
           <button class="btn btn--ghost" id="btn-trocar-material" style="padding:6px 12px; font-size:13px">Trocar</button>
@@ -842,7 +844,7 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
             (m) => `
           <div class="row" style="padding:8px 14px">
             <div class="row__main">
-              <div class="row__title" style="font-size:14px">${escapeHtml(m.nome)}</div>
+              <div class="row__title" style="font-size:14px">${escapeHtml(m.nome)}${m.aprovado === 'pendente' ? ' <span class="badge badge--warn">pendente</span>' : ''}</div>
               <div class="row__meta">Largura: ${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</div>
             </div>
             <button class="btn btn--ghost" data-escolher-material="${m.id}" style="padding:6px 12px; font-size:13px">Usar</button>
@@ -856,7 +858,7 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
       btn.addEventListener('click', () => {
         const m = materiaisDisponiveis.find((x) => x.id === btn.dataset.escolherMaterial);
         if (!m) return;
-        st.material = { id: m.id, nome: m.nome, tipo: m.tipo, largura: m.largura ?? null };
+        st.material = { id: m.id, nome: m.nome, tipo: m.tipo, largura: m.largura ?? null, pendente: m.aprovado === 'pendente' };
         st.materialBusca = '';
         renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis);
       });

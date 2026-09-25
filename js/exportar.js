@@ -28,6 +28,10 @@ const Exportar = {
     { chave: 'origem', titulo: 'Origem', tipo: 'texto', largura: 12 },
   ],
 
+  colunas(opcoes) {
+    return opcoes && opcoes.semFuncionario ? this.COLUNAS.filter((c) => c.chave !== 'funcionarioNome') : this.COLUNAS;
+  },
+
   linhas(itens) {
     return itens.map((i) => ({
       dataFinal: i.dataFinal,
@@ -67,7 +71,8 @@ const Exportar = {
 
   /* ---------- CSV (ponto e vírgula + BOM: abre direto no Excel em português) ---------- */
 
-  gerarCSV(itens, contexto) {
+  gerarCSV(itens, contexto, opcoes) {
+    const COLUNAS = this.colunas(opcoes);
     const esc = (v) => {
       const s = v == null ? '' : String(v);
       return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -81,14 +86,15 @@ const Exportar = {
     const linhas = [];
     linhas.push(esc(contexto));
     linhas.push('');
-    linhas.push(this.COLUNAS.map((c) => esc(c.titulo)).join(';'));
-    this.linhas(itens).forEach((l) => linhas.push(this.COLUNAS.map((c) => esc(valor(c, l[c.chave]))).join(';')));
+    linhas.push(COLUNAS.map((c) => esc(c.titulo)).join(';'));
+    this.linhas(itens).forEach((l) => linhas.push(COLUNAS.map((c) => esc(valor(c, l[c.chave]))).join(';')));
     return new Blob(['\uFEFF' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   },
 
   /* ---------- XLSX ---------- */
 
-  gerarXLSX(itens, contexto) {
+  gerarXLSX(itens, contexto, opcoes) {
+    const COLUNAS = this.colunas(opcoes);
     const xmlEsc = (s) =>
       String(s ?? '')
         .replace(/&/g, '&amp;')
@@ -116,10 +122,10 @@ const Exportar = {
 
     const rows = [];
     rows.push(`<row r="1">${celTexto('A1', contexto)}</row>`);
-    rows.push(`<row r="3">${this.COLUNAS.map((c, i) => celTexto(`${colLetra(i)}3`, c.titulo)).join('')}</row>`);
+    rows.push(`<row r="3">${COLUNAS.map((c, i) => celTexto(`${colLetra(i)}3`, c.titulo)).join('')}</row>`);
     this.linhas(itens).forEach((l, idx) => {
       const r = idx + 4;
-      const cels = this.COLUNAS.map((c, i) => {
+      const cels = COLUNAS.map((c, i) => {
         const ref = `${colLetra(i)}${r}`;
         const v = l[c.chave];
         if (v == null || v === '') return '';
@@ -134,15 +140,15 @@ const Exportar = {
     const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
 <sheetViews><sheetView workbookViewId="0"><pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
-<cols>${this.COLUNAS.map((c, i) => `<col min="${i + 1}" max="${i + 1}" width="${c.largura}" customWidth="1"/>`).join('')}</cols>
+<cols>${COLUNAS.map((c, i) => `<col min="${i + 1}" max="${i + 1}" width="${c.largura}" customWidth="1"/>`).join('')}</cols>
 <sheetData>${rows.join('')}</sheetData>
-<autoFilter ref="A3:${colLetra(this.COLUNAS.length - 1)}${ultimaLinha}"/>
+<autoFilter ref="A3:${colLetra(COLUNAS.length - 1)}${ultimaLinha}"/>
 </worksheet>`;
 
     const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
 <sheets><sheet name="Dados" sheetId="1" r:id="rId1"/></sheets>
-<definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">Dados!$A$3:$${colLetra(this.COLUNAS.length - 1)}$${ultimaLinha}</definedName></definedNames>
+<definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">Dados!$A$3:$${colLetra(COLUNAS.length - 1)}$${ultimaLinha}</definedName></definedNames>
 </workbook>`;
 
     const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

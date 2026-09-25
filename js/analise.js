@@ -91,6 +91,7 @@ const Analise = {
       if (f.fim != null && i.dataFinal >= f.fim) return false;
       if (f.funcionarioId && i.funcionarioId !== f.funcionarioId) return false;
       if (f.categoria && i.categoria !== f.categoria) return false;
+      if (f.categorias && f.categorias.length && !f.categorias.includes(i.categoria)) return false;
       if (f.material && i.materialNome !== f.material) return false;
       if (nomeAlvo && !this.normaliza(i.nome).includes(nomeAlvo)) return false;
       return true;

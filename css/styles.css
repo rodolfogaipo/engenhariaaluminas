@@ -381,7 +381,7 @@ a { color: var(--brand-700); }
 .field input:focus, .field select:focus, .field textarea:focus {
   outline: 2px solid var(--brand-600);
   outline-offset: 1px;
-  background: var(--surface);
+  background-color: var(--surface); /* só a cor: assim a setinha ▾ da lista não some ao clicar */
 }
 .field textarea { resize: vertical; min-height: 80px; }
 
@@ -789,3 +789,9 @@ a { color: var(--brand-700); }
 .rp-foto { position: relative; width: 100%; padding-top: 75%; border-radius: 1.5mm; overflow: hidden; background: #fff; border: 0.25mm solid var(--line); }
 /* foto inteira, sem cortar o móvel */
 .rp-foto img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+
+/* Relatório — várias categorias ao mesmo tempo */
+.rel-cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.rel-cat-grid small { color: var(--ink-faint); font-weight: 600; margin-left: 4px; }
+.rel-cat--vazia { opacity: .55; }
+.rel-cat-conta { font-weight: 600; color: var(--brand-700); margin-left: 6px; }

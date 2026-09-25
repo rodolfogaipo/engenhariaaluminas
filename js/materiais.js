@@ -47,6 +47,38 @@ const Materiais = {
     return cats;
   },
 
+  // Quem tem a aba Materiais pode cadastrar material e categoria.
+  // O que não é do Admin entra "pendente" até o Admin aprovar — mas já
+  // pode ser usado no lançamento de corte, marcado "(pendente)".
+  podeCadastrar() {
+    return Auth.isAdmin() || Auth.pode('materiais');
+  },
+
+  ehPendente(reg) {
+    return !!reg && reg.aprovado === 'pendente';
+  },
+
+  // Admin mexe em tudo; o funcionário só no que ELE cadastrou e ainda
+  // está pendente (depois de aprovado, só o Admin)
+  podeMexer(reg) {
+    if (Auth.isAdmin()) return true;
+    return !!reg && this.ehPendente(reg) && reg.criadoPorId === Auth.current.id;
+  },
+
+  statusNovo() {
+    return Auth.isAdmin()
+      ? { aprovado: 'aprovado', dataAprovacao: Date.now() }
+      : { aprovado: 'pendente', dataAprovacao: null };
+  },
+
+  seloPendente(reg) {
+    return this.ehPendente(reg)
+      ? `<span class="badge badge--warn" style="margin-left:6px">Pendente aprovação</span>${
+          reg.criadoPorNome ? `<span class="row__meta" style="margin-left:6px">por ${escapeHtml(reg.criadoPorNome)}</span>` : ''
+        }`
+      : '';
+  },
+
   nomesCategorias() {
     return (this._cacheCategorias || this.CATEGORIAS_PADRAO).map((c) => c.nome);
   },
@@ -94,22 +126,27 @@ function normalizaBuscaMaterial(s) {
 
 async function renderMateriais(view) {
   await Materiais.listarCategorias();
-  if (MateriaisView.subView === 'form' && Auth.isAdmin()) {
+  if (MateriaisView.subView === 'form' && Materiais.podeCadastrar()) {
     return renderMaterialForm(view);
   }
-  if (MateriaisView.subView === 'categorias' && Auth.isAdmin()) {
+  if (MateriaisView.subView === 'categorias' && Materiais.podeCadastrar()) {
     return renderCategoriasMaterial(view);
   }
   return renderMateriaisLista(view);
 }
 
 async function renderMateriaisLista(view) {
-  const ehAdmin = Auth.isAdmin();
+  const ehAdmin = Materiais.podeCadastrar(); // mostra "Categorias" e "+ Novo Material"
+
   view.innerHTML = `
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap">
       <div>
         <h2 class="section-title" style="margin-bottom:2px">Materiais</h2>
-        <p class="section-sub" style="margin:0">Materiais com a largura, pra escolher no lançamento de corte</p>
+        <p class="section-sub" style="margin:0">${
+          Auth.isAdmin()
+            ? 'Materiais com a largura, pra escolher no lançamento de corte'
+            : 'Materiais com a largura. O que você cadastrar fica pendente até o Admin aprovar, mas já pode ser usado no lançamento.'
+        }</p>
       </div>
       ${
         ehAdmin
@@ -175,7 +212,7 @@ async function renderMateriaisLista(view) {
 }
 
 async function atualizarListaMateriais(view) {
-  const ehAdmin = Auth.isAdmin();
+  const ehAdmin = Materiais.podeCadastrar();
   const todos = await Materiais.listar();
   const servicos = await DB.getAll('servicos');
   const usos = {};
@@ -201,8 +238,8 @@ async function atualizarListaMateriais(view) {
           <div class="empty__sub">${
             todos.length === 0
               ? ehAdmin
-                ? 'Toque em "+ Novo Material" para cadastrar o primeiro tecido, tela ou couro.'
-                : 'Quando o administrador cadastrar os materiais, aparecem aqui.'
+                ? 'Toque em "+ Novo Material" para cadastrar o primeiro.'
+                : 'Quando os materiais forem cadastrados, aparecem aqui.'
               : 'Tente outro nome ou outro tipo.'
           }</div>
         </div>
@@ -217,15 +254,16 @@ async function atualizarListaMateriais(view) {
           (m) => `
         <div class="row" style="padding:14px 18px; flex-wrap:wrap">
           <div class="row__main" style="flex:1 1 200px">
-            <div class="row__title">${escapeHtml(m.nome)}</div>
+            <div class="row__title">${escapeHtml(m.nome)}${Materiais.seloPendente(m)}</div>
             <div class="row__meta">${escapeHtml(m.tipo || '—')} · Largura: <b>${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</b>${usos[m.id] ? ` · usado em ${usos[m.id]} serviço(s)` : ''}</div>
             ${m.observacao ? `<div class="row__meta" style="font-style:italic">${escapeHtml(m.observacao)}</div>` : ''}
           </div>
           ${
-            ehAdmin
-              ? `<div style="display:flex; gap:6px; flex:0 0 auto">
+            Materiais.podeMexer(m) || (Auth.isAdmin() && Materiais.ehPendente(m))
+              ? `<div style="display:flex; gap:6px; flex:0 0 auto; flex-wrap:wrap">
+                  ${Auth.isAdmin() && Materiais.ehPendente(m) ? `<button class="btn btn--primary" data-aprovar-material="${m.id}" style="padding:6px 12px; font-size:13px">Aprovar</button>` : ''}
                   <button class="btn btn--ghost" data-editar-material="${m.id}" style="padding:6px 12px; font-size:13px">Editar</button>
-                  <button class="btn btn--danger" data-excluir-material="${m.id}" style="padding:6px 12px; font-size:13px">Excluir</button>
+                  <button class="btn btn--danger" data-excluir-material="${m.id}" style="padding:6px 12px; font-size:13px">${Auth.isAdmin() && Materiais.ehPendente(m) ? 'Recusar' : 'Excluir'}</button>
                 </div>`
               : ''
           }
@@ -236,7 +274,24 @@ async function atualizarListaMateriais(view) {
     <div class="row__meta" style="text-align:center; margin-top:10px">${filtrados.length} material(is)</div>
   `;
 
-  if (!ehAdmin) return;
+  listaEl.querySelectorAll('[data-aprovar-material]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const m = await DB.get('materiais', btn.dataset.aprovarMaterial);
+      if (!m) return;
+      m.aprovado = 'aprovado';
+      m.dataAprovacao = Date.now();
+      await DB.put('materiais', m);
+      // aprovar o material aprova também a categoria dele, se estava pendente
+      const cat = (await DB.getAll('categorias_material')).find((c) => c.nome === m.tipo && c.aprovado === 'pendente');
+      if (cat) {
+        cat.aprovado = 'aprovado';
+        cat.dataAprovacao = Date.now();
+        await DB.put('categorias_material', cat);
+      }
+      atualizarListaMateriais(view);
+      if (typeof atualizarBadgesTabbar === 'function') atualizarBadgesTabbar();
+    });
+  });
 
   listaEl.querySelectorAll('[data-editar-material]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -358,7 +413,18 @@ function renderMaterialForm(view) {
     try {
       await comTimeout(
         (async () => {
-          const registro = st.editId ? (await DB.get('materiais', st.editId)) || { id: st.editId } : { id: dbUtil.uid(), criadoEm: Date.now(), criadoPor: Auth.current.nome };
+          const registro = st.editId
+            ? (await DB.get('materiais', st.editId)) || { id: st.editId }
+            : {
+                id: dbUtil.uid(),
+                criadoEm: Date.now(),
+                criadoPor: Auth.current.nome,
+                criadoPorId: Auth.current.id,
+                criadoPorNome: Auth.current.nome,
+                ...Materiais.statusNovo(),
+              };
+          // funcionário não consegue mexer no que já foi aprovado (a tela nem mostra o botão)
+          if (st.editId && !Materiais.podeMexer(registro)) throw new Error('Esse material já foi aprovado — só o Admin pode alterar.');
           registro.nome = nome;
           registro.tipo = st.tipo;
           registro.largura = largura;
@@ -410,7 +476,9 @@ async function renderCategoriasMaterial(view) {
       </button>
       <div>
         <h2 class="section-title" style="margin:0">Categorias de material</h2>
-        <p class="section-sub" style="margin:0">O lançamento "Corte X" mostra os materiais da categoria X (ex: Corte Espuma → Espuma)</p>
+        <p class="section-sub" style="margin:0">O lançamento "Corte X" mostra os materiais da categoria X (ex: Corte Espuma → Espuma)${
+          Auth.isAdmin() ? '' : '. Categoria nova fica pendente até o Admin aprovar.'
+        }</p>
       </div>
     </div>
 
@@ -444,13 +512,18 @@ async function renderCategoriasMaterial(view) {
                 (c) => `
           <div class="row" style="padding:14px 18px; flex-wrap:wrap">
             <div class="row__main" style="flex:1 1 180px">
-              <div class="row__title">${escapeHtml(c.nome)}</div>
+              <div class="row__title">${escapeHtml(c.nome)}${Materiais.seloPendente(c)}</div>
               <div class="row__meta">${qtdPorCat[c.nome] || 0} material(is)</div>
             </div>
-            <div style="display:flex; gap:6px; flex:0 0 auto">
-              <button class="btn btn--ghost" data-renomear-cat-mat="${c.id}" style="padding:6px 12px; font-size:13px">Editar</button>
-              <button class="btn btn--danger" data-excluir-cat-mat="${c.id}" style="padding:6px 12px; font-size:13px">Excluir</button>
-            </div>
+            ${
+              Materiais.podeMexer(c)
+                ? `<div style="display:flex; gap:6px; flex:0 0 auto; flex-wrap:wrap">
+                    ${Auth.isAdmin() && Materiais.ehPendente(c) ? `<button class="btn btn--primary" data-aprovar-cat-mat="${c.id}" style="padding:6px 12px; font-size:13px">Aprovar</button>` : ''}
+                    <button class="btn btn--ghost" data-renomear-cat-mat="${c.id}" style="padding:6px 12px; font-size:13px">Editar</button>
+                    <button class="btn btn--danger" data-excluir-cat-mat="${c.id}" style="padding:6px 12px; font-size:13px">${Auth.isAdmin() && Materiais.ehPendente(c) ? 'Recusar' : 'Excluir'}</button>
+                  </div>`
+                : ''
+            }
           </div>`
               )
               .join('')
@@ -471,6 +544,18 @@ async function renderCategoriasMaterial(view) {
       renderCategoriasMaterial(view);
     });
   }
+
+  view.querySelectorAll('[data-aprovar-cat-mat]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const c = cats.find((x) => x.id === btn.dataset.aprovarCatMat);
+      if (!c) return;
+      c.aprovado = 'aprovado';
+      c.dataAprovacao = Date.now();
+      await DB.put('categorias_material', c);
+      renderCategoriasMaterial(view);
+      if (typeof atualizarBadgesTabbar === 'function') atualizarBadgesTabbar();
+    })
+  );
 
   view.querySelectorAll('[data-renomear-cat-mat]').forEach((btn) =>
     btn.addEventListener('click', () => {
@@ -539,7 +624,14 @@ async function renderCategoriasMaterial(view) {
                 if (MateriaisView.filtroTipo === antigo) MateriaisView.filtroTipo = nome;
               }
             } else {
-              await DB.put('categorias_material', { id: dbUtil.uid(), nome, criadoEm: Date.now() });
+              await DB.put('categorias_material', {
+                id: dbUtil.uid(),
+                nome,
+                criadoEm: Date.now(),
+                criadoPorId: Auth.current.id,
+                criadoPorNome: Auth.current.nome,
+                ...Materiais.statusNovo(),
+              });
             }
           })()
         );

@@ -20,8 +20,8 @@ const RelatorioView = {
   dataReferencia: Date.now(),
   inicioStr: '',
   fimStr: '',
-  funcionarioId: '', // '' = todos
-  categoria: '',
+  funcionarioId: '', // '' = todos (separado por pessoa) · '__equipe__' = equipe sem nomes · ou o id de alguém
+  categorias: [], // várias ao mesmo tempo; vazio = todas
   material: '',
   nome: '',
   // o que entra no PDF
@@ -68,11 +68,12 @@ async function dadosDoRelatorio() {
   const itensTodos = await Analise.itensConcluidos();
   const periodo = await Analise.periodo(st.periodoTipo, st.dataReferencia, st.inicioStr, st.fimStr);
   const funcionarios = await Analise.funcionarios(itensTodos);
-  const filtrosSemPeriodo = { funcionarioId: st.funcionarioId || null, categoria: st.categoria || null, material: st.material || null, nome: st.nome };
+  const semNomes = st.funcionarioId === '__equipe__';
+  const filtrosSemPeriodo = { funcionarioId: st.funcionarioId && !semNomes ? st.funcionarioId : null, categorias: st.categorias.length ? [...st.categorias] : null, material: st.material || null, nome: st.nome };
   const base = periodo.invalido ? [] : Analise.filtrar(itensTodos, { ...filtrosSemPeriodo, inicio: periodo.inicio, fim: periodo.fim });
   const finais = st.selecaoManual ? base.filter((i) => st.selecionados.has(i.id)) : base;
-  const funcionario = st.funcionarioId ? funcionarios.find((f) => f.id === st.funcionarioId) || null : null;
-  return { itensTodos, periodo, funcionarios, filtrosSemPeriodo, base, finais, funcionario };
+  const funcionario = st.funcionarioId && !semNomes ? funcionarios.find((f) => f.id === st.funcionarioId) || null : null;
+  return { itensTodos, periodo, funcionarios, filtrosSemPeriodo, base, finais, funcionario , semNomes };
 }
 
 const ORDENS_LISTA = {
@@ -106,8 +107,8 @@ function secoesLigadas() {
 
 function descricaoFiltros(d, comData) {
   const st = RelatorioView;
-  const partes = [`Período: ${d.periodo.rotulo}`, `Funcionário: ${d.funcionario ? d.funcionario.nome : 'Todos'}`];
-  if (st.categoria) partes.push(`Categoria: ${st.categoria}`);
+  const partes = [`Período: ${d.periodo.rotulo}`, `Funcionário: ${d.funcionario ? d.funcionario.nome : d.semNomes ? 'Equipe (sem nomes)' : 'Todos'}`];
+  if (st.categorias.length) partes.push(`${st.categorias.length === 1 ? 'Categoria' : 'Categorias'}: ${st.categorias.join(', ')}`);
   if (st.material) partes.push(`Material: ${st.material}`);
   if (st.nome && st.nome.trim()) partes.push(`Nome contém: "${st.nome.trim()}"`);
   if (st.selecaoManual) partes.push(`Seleção manual: ${d.finais.length} item(ns)`);
@@ -131,6 +132,12 @@ async function renderRelatorioFiltros(cont) {
   ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
   const modoItem = !!(st.nome && st.nome.trim());
+  const qtdPorCategoria = {};
+  if (!d.periodo.invalido) {
+    Analise.filtrar(d.itensTodos, { ...d.filtrosSemPeriodo, categorias: null, inicio: d.periodo.inicio, fim: d.periodo.fim }).forEach(
+      (i) => (qtdPorCategoria[i.categoria] = (qtdPorCategoria[i.categoria] || 0) + 1)
+    );
+  }
   const grupos = Analise.aproveitamentoAgrupado(d.finais, 'categoria');
   const itensComAprov = d.finais.filter((i) => i.aproveitamento != null);
 
@@ -175,15 +182,9 @@ async function renderRelatorioFiltros(cont) {
         <div class="field">
           <label for="rel-func">Funcionário</label>
           <select id="rel-func">
-            <option value="">Todos</option>
+            <option value="" ${!st.funcionarioId ? 'selected' : ''}>Todos (separado por funcionário)</option>
+            <option value="__equipe__" ${st.funcionarioId === '__equipe__' ? 'selected' : ''}>Equipe (sem nomes)</option>
             ${d.funcionarios.map((f) => `<option value="${f.id}" ${st.funcionarioId === f.id ? 'selected' : ''}>${escapeHtml(f.nome)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="field">
-          <label for="rel-cat">Categoria</label>
-          <select id="rel-cat">
-            <option value="">Todas</option>
-            ${categorias.map((c) => `<option value="${escapeHtml(c)}" ${st.categoria === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
           </select>
         </div>
         <div class="field">
@@ -197,6 +198,29 @@ async function renderRelatorioFiltros(cont) {
           <label for="rel-nome">Nome do móvel contém</label>
           <input id="rel-nome" value="${escapeHtml(st.nome)}" placeholder="Ex: SOFÁ MARROCOS" autocomplete="off" />
         </div>
+      </div>
+
+      <div class="field" style="margin-bottom:0">
+        <label>Categorias ${st.categorias.length ? `<span class="rel-cat-conta">${st.categorias.length} marcada${st.categorias.length === 1 ? '' : 's'}</span>` : ''}</label>
+        <div class="chips" style="margin-bottom:10px">
+          <button class="chip ${st.categorias.length === 0 ? 'chip--on' : ''}" id="rel-cat-todas">Todas</button>
+          <button class="chip" id="rel-cat-cortes">Só cortes</button>
+          ${st.categorias.length ? '<button class="chip" id="rel-cat-limpar">Limpar</button>' : ''}
+        </div>
+        <div class="rel-cat-grid">
+          ${categorias
+            .map((c) => {
+              const n = qtdPorCategoria[c] || 0;
+              return `<label class="perm-item ${n ? '' : 'rel-cat--vazia'}">
+                <input type="checkbox" data-rel-cat="${escapeHtml(c)}" ${st.categorias.includes(c) ? 'checked' : ''} />
+                <span>${escapeHtml(c)} <small>${n}</small></span>
+              </label>`;
+            })
+            .join('')}
+        </div>
+        <div class="row__meta" style="margin-top:8px">${
+          st.categorias.length ? 'Só as categorias marcadas entram no relatório e na planilha.' : 'Nenhuma marcada = todas as categorias entram.'
+        } O número ao lado é quantos itens tem no período.</div>
       </div>
     </div>
 
@@ -364,7 +388,26 @@ async function renderRelatorioFiltros(cont) {
   ligarCampoData(document.getElementById('rel-fim'), 'fimStr');
 
   document.getElementById('rel-func').addEventListener('change', (ev) => ((st.funcionarioId = ev.target.value), rerender()));
-  document.getElementById('rel-cat').addEventListener('change', (ev) => ((st.categoria = ev.target.value), rerender()));
+  cont.querySelectorAll('[data-rel-cat]').forEach((chk) =>
+    chk.addEventListener('change', () => {
+      const c = chk.dataset.relCat;
+      const set = new Set(st.categorias);
+      if (chk.checked) set.add(c);
+      else set.delete(c);
+      // mantém na ordem da lista
+      st.categorias = categorias.filter((x) => set.has(x));
+      st.status = '';
+      rerender();
+    })
+  );
+  document.getElementById('rel-cat-todas').addEventListener('click', () => ((st.categorias = []), (st.status = ''), rerender()));
+  const limparCat = document.getElementById('rel-cat-limpar');
+  if (limparCat) limparCat.addEventListener('click', () => ((st.categorias = []), (st.status = ''), rerender()));
+  document.getElementById('rel-cat-cortes').addEventListener('click', () => {
+    st.categorias = categorias.filter((c) => Analise.normaliza(c).startsWith('corte'));
+    st.status = '';
+    rerender();
+  });
   document.getElementById('rel-mat').addEventListener('change', (ev) => ((st.material = ev.target.value), rerender()));
   const nomeInput = document.getElementById('rel-nome');
   nomeInput.addEventListener('change', () => ((st.nome = nomeInput.value), rerender()));
@@ -505,14 +548,14 @@ async function renderRelatorioFiltros(cont) {
   document.getElementById('rel-xlsx').addEventListener('click', async () => {
     const dados = await dadosDoRelatorio();
     if (!dados.finais.length) return rerender();
-    Exportar.baixar(Exportar.gerarXLSX(ordenarItensRelatorio(dados.finais, st.ordemLista), descricaoFiltros(dados, true)), Exportar.nomeArquivo('xlsx'));
+    Exportar.baixar(Exportar.gerarXLSX(ordenarItensRelatorio(dados.finais, st.ordemLista), descricaoFiltros(dados, true), { semFuncionario: dados.semNomes }), Exportar.nomeArquivo('xlsx'));
     setStatus(`Planilha .xlsx com ${dados.finais.length} linha(s) baixada.`);
   });
 
   document.getElementById('rel-csv').addEventListener('click', async () => {
     const dados = await dadosDoRelatorio();
     if (!dados.finais.length) return rerender();
-    Exportar.baixar(Exportar.gerarCSV(ordenarItensRelatorio(dados.finais, st.ordemLista), descricaoFiltros(dados, true)), Exportar.nomeArquivo('csv'));
+    Exportar.baixar(Exportar.gerarCSV(ordenarItensRelatorio(dados.finais, st.ordemLista), descricaoFiltros(dados, true), { semFuncionario: dados.semNomes }), Exportar.nomeArquivo('csv'));
     setStatus(`Arquivo .csv com ${dados.finais.length} linha(s) baixado.`);
   });
 }
@@ -581,12 +624,13 @@ async function montarPaginasRelatorio(d) {
     const pessoas = d.funcionarios.filter((f) => idsComItens.has(f.id) || f.tipo === 'funcionario');
     html(`<div class="rp-caixas">
       ${caixa(totais.qtd, 'Projetos')}
-      ${caixa(idsComItens.size, 'Pessoas com entregas')}
+      ${d.semNomes ? caixa(totais.atrasados, 'Atrasados') : caixa(idsComItens.size, 'Pessoas com entregas')}
       ${caixa(totais.erros, 'Erros')}
       ${caixa(totais.errosNovos, 'Erros novos')}
       ${caixa(totais.qtd ? `${formatarNumero((totais.noPrazo / Math.max(1, totais.noPrazo + totais.atrasados)) * 100, 0)}%` : '—', 'No prazo (com data)')}
       ${caixa(totais.mediaAprov != null ? formatarPct(totais.mediaAprov) : '—', 'Aproveitamento médio')}
     </div>`);
+    if (!d.semNomes) {
     const linhas = [];
     for (const p of pessoas) {
       const itens = finais.filter((i) => i.funcionarioId === p.id);
@@ -603,6 +647,9 @@ async function montarPaginasRelatorio(d) {
     }
     tabela('<tr><th>Funcionário</th><th class="num">Projetos</th><th class="num">Nota média</th><th class="num">% da Meta</th><th class="num">Erros</th><th class="num">Erros novos</th><th class="num">Aprov. médio</th></tr>', linhas);
     html(`<p class="rp-nota">Nota e % da Meta seguem o cálculo oficial do app (média das semanas do período, sem férias) e não mudam com os filtros de categoria, material ou seleção manual.</p>`);
+    } else {
+      html(`<p class="rp-nota">Produção da equipe como um todo, sem separar por funcionário.</p>`);
+    }
   }
   } // fim Resumo
 
@@ -750,7 +797,7 @@ async function montarPaginasRelatorio(d) {
         ? 'agrupados por categoria (A→Z) e, dentro dela, por data de conclusão'
         : 'do mais antigo para o mais recente (data de conclusão)';
     secao('Lista detalhada', `${finais.length} item(ns), ${subtituloOrdem}.`);
-    const mostrarFunc = !d.funcionario;
+    const mostrarFunc = !d.funcionario && !d.semNomes;
     const nColunas = mostrarFunc ? 10 : 9;
     const qtdPorCat = {};
     ordenados.forEach((i) => (qtdPorCat[i.categoria] = (qtdPorCat[i.categoria] || 0) + 1));

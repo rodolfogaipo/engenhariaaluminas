@@ -83,6 +83,11 @@ async function renderAdminMais(cont) {
                   : ''
               }
               ${
+                pendencias.materiais > 0
+                  ? `<div class="row__meta">🧵 <b>${pendencias.materiais}</b> material(is) / categoria(s) aguardando aprovação — Materiais</div>`
+                  : ''
+              }
+              ${
                 pendencias.mkt > 0
                   ? `<div class="row__meta">🛋️ <b>${pendencias.mkt}</b> produto(s) MKT aguardando aprovação — MKT</div>`
                   : ''
@@ -914,10 +919,12 @@ function renderFormCategoria(cont, view) {
 /* ---------------- PENDÊNCIAS DE APROVAÇÃO ---------------- */
 
 async function contarPendencias() {
-  const [servicos, planoCorte, produtosMkt] = await Promise.all([
+  const [servicos, planoCorte, produtosMkt, materiais, categoriasMat] = await Promise.all([
     DB.getAll('servicos'),
     DB.getAll('plano_corte'),
     DB.getAll('produtos_mkt'),
+    DB.getAll('materiais'),
+    DB.getAll('categorias_material'),
   ]);
 
   const pendencias = {
@@ -925,8 +932,9 @@ async function contarPendencias() {
     conclusoes: servicos.filter((s) => !s.dataFinal && s.concluidoInformadoEm).length,
     planoCorte: planoCorte.filter((p) => p.aprovado === 'pendente').length,
     mkt: produtosMkt.filter((p) => p.aprovado === 'pendente').length,
+    materiais: materiais.filter((m) => m.aprovado === 'pendente').length + categoriasMat.filter((c) => c.aprovado === 'pendente').length,
   };
-  pendencias.total = pendencias.servicos + pendencias.conclusoes + pendencias.planoCorte + pendencias.mkt;
+  pendencias.total = pendencias.servicos + pendencias.conclusoes + pendencias.planoCorte + pendencias.mkt + pendencias.materiais;
   return pendencias;
 }
 
