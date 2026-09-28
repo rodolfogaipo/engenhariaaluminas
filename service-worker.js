@@ -6,7 +6,7 @@
    vez de continuar usando a cópia antiga guardada no celular.
    ========================================================= */
 
-const CACHE_VERSION = 'v75';
+const CACHE_VERSION = 'v76';
 const CACHE_NAME = `controle-equipe-${CACHE_VERSION}`;
 
 const CORE_ASSETS = [

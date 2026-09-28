@@ -144,7 +144,11 @@ async function renderCartaoDestaque(cont) {
       </div>
       <div class="row__meta" style="margin-top:10px">${
         ehAtual ? `${st.tipo === 'semana' ? 'Essa semana' : st.tipo === 'mes' ? 'Esse mês' : 'Esse ano'} ainda está em andamento — o resultado pode mudar. ` : ''
-      }A meta do quadro é a da semana atual (${formatarDataCurta(per.rMeta.inicio).slice(0, 5)} a ${formatarDataCurta(per.rMeta.fim - 1).slice(0, 5)}).</div>
+      }${
+        st.tipo === 'semana'
+          ? `A folha traz a meta da semana atual (${formatarDataCurta(per.rMeta.inicio).slice(0, 5)} a ${formatarDataCurta(per.rMeta.fim - 1).slice(0, 5)}).`
+          : 'Destaque, ranking e projetos do período.'
+      }</div>
       <div class="row__meta" id="destaque-status" style="margin-top:6px">${escapeHtml(st.status)}</div>
     </div>
     <div id="destaque-previa"></div>
@@ -265,7 +269,8 @@ async function montarPdfDestaque(tipo, ref) {
     classe: 'dq-tabela',
   });
 
-  // 4) meta da semana seguinte (ou atual)
+  // 4) meta da semana atual — só no Destaque da Semana
+  if (tipo === 'semana') {
   const rotSemMeta = `${formatarDataCurta(per.rMeta.inicio).slice(0, 5)} a ${formatarDataCurta(per.rMeta.fim - 1).slice(0, 5)}`;
   blocos.push({
     tipo: 'titulo',
@@ -289,6 +294,7 @@ async function montarPdfDestaque(tipo, ref) {
       )
       .join('')}</div>`,
   });
+  }
 
   return montarPdfPadrao(blocos, {
     titulo: `Destaque ${nomes[tipo]}`,
