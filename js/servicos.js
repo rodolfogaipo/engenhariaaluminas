@@ -12,6 +12,8 @@ const ServicosView = {
   formState: null,        // estado do formulário em edição
   modoSelecao: false,     // seleção múltipla p/ excluir vários de uma vez
   selecionados: new Set(),
+  filtroEstado: 'todos',  // 'todos' | 'concluido' | 'em_andamento' | 'disponivel'
+  filtroCategoria: '',    // '' = todas · '__cadastros__' = todos os Cadastro… · ou o nome
 };
 
 async function renderServicos(view) {
@@ -55,6 +57,8 @@ async function renderServicosLista(view) {
 
     <div class="field" style="margin-bottom:20px">
       <input id="busca-servico" placeholder="Buscar por nome, tipo, funcionário ou material…" value="${escapeHtml(ServicosView.filtroTexto)}" />
+    </div>
+    <div id="filtros-servicos" style="margin:-4px 0 16px">
     </div>
 
     <div id="barra-selecao"></div>
@@ -150,7 +154,15 @@ async function atualizarListaServicos(view) {
       ? todos.filter((s) => estadoServico(s) === 'concluido')
       : todos.filter((s) => servicoVisivelPara(s, user.id));
   const filtro = Const_normaliza(ServicosView.filtroTexto);
-  const filtrados = visiveis
+  const fv = ServicosView;
+  const categoriasNomes = Array.from(
+    new Set([...(await Categorias.listar()).map((c) => c.nome), ...visiveis.map((s) => s.tipo).filter(Boolean)])
+  ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const bateCategoria = (s) =>
+    !fv.filtroCategoria ||
+    (fv.filtroCategoria === '__cadastros__' ? Const_normaliza(s.tipo).startsWith('cadastro') : s.tipo === fv.filtroCategoria);
+  const baseFiltro = visiveis
+    .filter(bateCategoria)
     .filter((s) => {
       if (!filtro) return true;
       return (
@@ -160,7 +172,47 @@ async function atualizarListaServicos(view) {
         Const_normaliza(s.materialNome).includes(filtro) ||
         Const_normaliza(s.numeroPedido).includes(filtro)
       );
-    })
+    });
+
+  // situação (a contagem já respeita a busca e a categoria)
+  const contaEst = { todos: baseFiltro.length, concluido: 0, em_andamento: 0, disponivel: 0 };
+  baseFiltro.forEach((s) => contaEst[estadoServico(s)]++);
+  const filtrosEl = document.getElementById('filtros-servicos');
+  if (filtrosEl) {
+    filtrosEl.innerHTML = `
+      <div class="filtros-linha">
+        <div class="chips">${[
+          ['todos', 'Todos'],
+          ['concluido', 'Concluídos'],
+          ['em_andamento', 'Em andamento'],
+          ['disponivel', 'Não iniciados'],
+        ]
+          .map(([v, l]) => `<button class="chip ${fv.filtroEstado === v ? 'chip--on' : ''}" data-filtro-estado="${v}">${l} <small>${contaEst[v]}</small></button>`)
+          .join('')}</div>
+        <div class="field filtros-cat">
+          <select id="filtro-categoria-servico" aria-label="Categoria">
+            <option value="" ${!fv.filtroCategoria ? 'selected' : ''}>Todas as categorias</option>
+            <option value="__cadastros__" ${fv.filtroCategoria === '__cadastros__' ? 'selected' : ''}>Todos os cadastros</option>
+            ${categoriasNomes.map((c) => `<option value="${escapeHtml(c)}" ${fv.filtroCategoria === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      ${fv.filtroEstado === 'em_andamento' ? '<div class="row__meta" style="margin-top:6px">Em andamento inclui os que o funcionário já marcou como concluídos e esperam sua validação.</div>' : ''}`;
+    filtrosEl.querySelectorAll('[data-filtro-estado]').forEach((b) =>
+      b.addEventListener('click', () => {
+        fv.filtroEstado = b.dataset.filtroEstado;
+        atualizarListaServicos(view);
+      })
+    );
+    const sel = document.getElementById('filtro-categoria-servico');
+    sel.addEventListener('change', () => {
+      fv.filtroCategoria = sel.value;
+      atualizarListaServicos(view);
+    });
+  }
+
+  const filtrados = baseFiltro
+    .filter((s) => fv.filtroEstado === 'todos' || estadoServico(s) === fv.filtroEstado)
     .sort((a, b) => {
       const prioridadeDe = (s) => {
         if (s.aprovado !== 'aprovado') return -1; // pendente de aprovação sempre no topo, pro Admin achar rápido
@@ -191,8 +243,8 @@ async function atualizarListaServicos(view) {
       <div class="card">
 
         <div class="empty">
-          <div class="empty__title">Nenhum serviço lançado ainda</div>
-          <div class="empty__sub">Toque em "+ Novo Serviço" para lançar o primeiro.</div>
+          <div class="empty__title">${visiveis.length ? 'Nada nesse filtro' : 'Nenhum serviço lançado ainda'}</div>
+          <div class="empty__sub">${visiveis.length ? 'Mude a situação, a categoria ou a busca.' : 'Toque em "+ Novo Serviço" para lançar o primeiro.'}</div>
         </div>
       </div>`;
     return;

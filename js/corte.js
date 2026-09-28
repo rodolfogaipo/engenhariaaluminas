@@ -40,6 +40,7 @@ async function renderCorteLista(view) {
     <div class="field" style="margin-bottom:20px">
       <input id="busca-corte" placeholder="Buscar por produto, nº pedido ou funcionário…" value="${escapeHtml(CorteView.filtroTexto)}" />
     </div>
+    <div id="filtros-corte" style="margin:-8px 0 16px"></div>
 
     <div id="lista-corte"></div>
   `;
@@ -58,7 +59,7 @@ async function atualizarListaCorte(view) {
   const todos = await DB.getAll('plano_corte');
   const filtro = Const_normaliza(CorteView.filtroTexto);
 
-  const filtrados = todos
+  const baseCorte = todos
     .filter((p) => (Auth.somenteLeitura() ? p.status === 'Concluído' : true))
     .filter((p) => {
       if (!filtro) return true;
@@ -69,6 +70,31 @@ async function atualizarListaCorte(view) {
         Const_normaliza(p.numeroPedido).includes(filtro)
       );
     })
+    ;
+  // filtro de situação (com a contagem de cada uma, já respeitando a busca)
+  const statusCorte = (p) => (STATUS_CORTE.includes(p.status) ? p.status : 'Aguardando');
+  const contaCorte = { todos: baseCorte.length, Aguardando: 0, 'Em andamento': 0, 'Concluído': 0 };
+  baseCorte.forEach((p) => contaCorte[statusCorte(p)]++);
+  if (!CorteView.filtroStatus) CorteView.filtroStatus = 'todos';
+  const filtrosEl = document.getElementById('filtros-corte');
+  if (filtrosEl) {
+    filtrosEl.innerHTML = `<div class="chips">${[
+      ['todos', 'Todos'],
+      ['Concluído', 'Concluídos'],
+      ['Em andamento', 'Em andamento'],
+      ['Aguardando', 'Aguardando'],
+    ]
+      .map(([v, l]) => `<button class="chip ${CorteView.filtroStatus === v ? 'chip--on' : ''}" data-filtro-corte="${v}">${l} <small>${contaCorte[v]}</small></button>`)
+      .join('')}</div>`;
+    filtrosEl.querySelectorAll('[data-filtro-corte]').forEach((b) =>
+      b.addEventListener('click', () => {
+        CorteView.filtroStatus = b.dataset.filtroCorte;
+        atualizarListaCorte(view);
+      })
+    );
+  }
+  const filtrados = baseCorte
+    .filter((p) => CorteView.filtroStatus === 'todos' || statusCorte(p) === CorteView.filtroStatus)
     .sort((a, b) => {
       // pendente de aprovação sempre no topo, pro Admin achar rápido
       const pendA = a.aprovado !== 'aprovado' ? 0 : 1;
@@ -85,7 +111,7 @@ async function atualizarListaCorte(view) {
     listaEl.innerHTML = `
       <div class="card">
         <div class="empty">
-          <div class="empty__title">Nenhuma CNP em Plano de Corte ainda</div>
+          <div class="empty__title">${todos.length ? 'Nada nessa busca ou situação' : 'Nenhuma CNP em Plano de Corte ainda'}</div>
           <div class="empty__sub">Assim que uma CNP for lançada em Serviços, ela aparece aqui automaticamente.</div>
         </div>
       </div>`;

@@ -898,3 +898,8 @@ a { color: var(--brand-700); }
 .rp-tempo .tempo-sub { font-size: 7pt; }
 .item-voltou { animation: itemVoltou 2.2s ease-out; }
 @keyframes itemVoltou { 0%, 40% { background: var(--brand-100); box-shadow: inset 3px 0 0 var(--brand-700); } 100% { background: transparent; box-shadow: none; } }
+
+/* filtros de situação + categoria (Serviços) */
+.filtros-linha { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.filtros-cat { margin: 0 !important; min-width: 220px; }
+.filtros-cat select { padding-top: 8px; padding-bottom: 8px; }
