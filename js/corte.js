@@ -79,6 +79,7 @@ async function atualizarListaCorte(view) {
 
   const listaEl = document.getElementById('lista-corte');
   if (!listaEl) return;
+  const tempos = user.tipo === 'admin' ? await Tempo.calcular(true) : null;
 
   if (filtrados.length === 0) {
     listaEl.innerHTML = `
@@ -113,9 +114,28 @@ async function atualizarListaCorte(view) {
               ? `<button class="btn btn--danger" data-excluir="${p.id}" style="padding:6px 12px; font-size:13px">Excluir</button>`
               : '';
 
+          const quando = (ts) => (Tempo.temHora(ts) ? Const.formatarDataHora(ts) : Const.formatarData(ts));
           const infoCorte =
             p.funcionarioCorteNome || p.dataInicioCorte || p.dataFinalCorte
-              ? `<div class="row__meta">Corte: ${escapeHtml(p.funcionarioCorteNome || '—')} · Início ${Const.formatarData(p.dataInicioCorte)} · Fim ${Const.formatarData(p.dataFinalCorte)}</div>`
+              ? `<div class="row__meta">Corte: ${escapeHtml(p.funcionarioCorteNome || '—')} · Início ${quando(p.dataInicioCorte)} · Fim ${quando(p.dataFinalCorte)}</div>`
+              : '';
+          const tempoInfo = tempos ? tempos.get(p.id) : null;
+
+          // botões de início/fim: gravam a hora exata (pro tempo gasto)
+          const podeMexer = !Auth.somenteLeitura() && p.status !== 'Concluído';
+          const iniciarBtn =
+            podeMexer && !p.dataInicioCorte
+              ? `<button class="btn btn--metal" data-iniciar-corte="${p.id}" style="padding:6px 12px; font-size:13px">Iniciar corte</button>`
+              : '';
+          const finalizarBtn =
+            podeMexer && p.dataInicioCorte && !p.dataFinalCorte && (user.tipo === 'admin' || !p.funcionarioCorteId || p.funcionarioCorteId === user.id)
+              ? `<button class="btn btn--primary" data-finalizar-corte="${p.id}" style="padding:6px 12px; font-size:13px">Finalizar corte</button>`
+              : '';
+          const tempoBtn =
+            tempoInfo && (tempoInfo.status === 'medido' || tempoInfo.status === 'desconsiderado')
+              ? `<button class="btn btn--ghost" data-desconsiderar-tempo-corte="${p.id}" style="padding:6px 12px; font-size:13px">${
+                  tempoInfo.status === 'desconsiderado' ? 'Voltar a contar o tempo' : 'Desconsiderar tempo'
+                }</button>`
               : '';
 
           const fotoThumb =
@@ -131,13 +151,17 @@ async function atualizarListaCorte(view) {
                 <div class="row__title">${escapeHtml(p.nomeProduto)}</div>
                 <div class="row__meta">${p.numeroPedido ? `Nº ${escapeHtml(p.numeroPedido)} · ` : ''}CNP por ${escapeHtml(p.funcionarioCNPNome || '—')} · Chegou em ${Const.formatarData(p.dataChegada)}</div>
                 ${infoCorte}
+                ${tempos ? Tempo.linhaLista(tempoInfo) : ''}
               </div>
             </div>
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
               ${badgeStatusCorte(p.status)}
               ${pendenteBadge}
+              ${iniciarBtn}
+              ${finalizarBtn}
               ${aprovBtn}
               ${editBtn}
+              ${tempoBtn}
               ${delBtn}
             </div>
           </div>`;
@@ -153,6 +177,54 @@ async function atualizarListaCorte(view) {
       pc.aprovado = 'aprovado';
       pc.dataAprovacao = Date.now();
       await DB.put('plano_corte', pc);
+      atualizarListaCorte(view);
+    });
+  });
+
+  listaEl.querySelectorAll('[data-iniciar-corte]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const pc = await DB.get('plano_corte', btn.dataset.iniciarCorte);
+      if (!pc || pc.dataInicioCorte) return;
+      pc.dataInicioCorte = Date.now();
+      pc.status = 'Em andamento';
+      if (!pc.funcionarioCorteId) {
+        pc.funcionarioCorteId = user.id;
+        pc.funcionarioCorteNome = user.nome;
+      }
+      pc.atualizadoEm = Date.now();
+      await DB.put('plano_corte', pc);
+      Tempo.limparCache();
+      atualizarListaCorte(view);
+    });
+  });
+
+  listaEl.querySelectorAll('[data-finalizar-corte]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const pc = await DB.get('plano_corte', btn.dataset.finalizarCorte);
+      if (!pc || pc.dataFinalCorte) return;
+      pc.dataFinalCorte = Date.now();
+      pc.status = 'Concluído';
+      if (!pc.funcionarioCorteId) {
+        pc.funcionarioCorteId = user.id;
+        pc.funcionarioCorteNome = user.nome;
+      }
+      // igual à atualização pelo formulário: do funcionário fica pendente
+      pc.aprovado = user.tipo === 'admin' ? 'aprovado' : 'pendente';
+      pc.dataAprovacao = user.tipo === 'admin' ? Date.now() : null;
+      pc.atualizadoEm = Date.now();
+      await DB.put('plano_corte', pc);
+      Tempo.limparCache();
+      atualizarListaCorte(view);
+    });
+  });
+
+  listaEl.querySelectorAll('[data-desconsiderar-tempo-corte]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const pc = await DB.get('plano_corte', btn.dataset.desconsiderarTempoCorte);
+      if (!pc) return;
+      pc.tempoDesconsiderado = !pc.tempoDesconsiderado;
+      await DB.put('plano_corte', pc);
+      Tempo.limparCache();
       atualizarListaCorte(view);
     });
   });
@@ -190,6 +262,10 @@ async function criarEstadoFormularioCorte(pc) {
     status: pc.status,
     dataInicioCorte: dataParaInputDate(pc.dataInicioCorte),
     dataFinalCorte: dataParaInputDate(pc.dataFinalCorte),
+    horaInicioCorte: Tempo.paraInputs(pc.dataInicioCorte).hora,
+    horaFinalCorte: Tempo.paraInputs(pc.dataFinalCorte).hora,
+    inicioOriginal: pc.dataInicioCorte || null,
+    finalOriginal: pc.dataFinalCorte || null,
     funcionarioCorteId: pc.funcionarioCorteId || '',
     imagens: pc.imagens ? [...pc.imagens] : [],
     usuarios,
@@ -227,13 +303,20 @@ async function renderCorteForm(view) {
       </div>
 
       <div class="field">
-        <label for="f-inicio-corte">Data Início do Corte (opcional)</label>
-        <input id="f-inicio-corte" type="date" value="${escapeHtml(st.dataInicioCorte)}" />
+        <label for="f-inicio-corte">Data e hora de início do corte (opcional)</label>
+        <div class="data-hora">
+          <input id="f-inicio-corte" type="date" value="${escapeHtml(st.dataInicioCorte)}" />
+          <input id="f-hora-inicio-corte" type="time" value="${escapeHtml(st.horaInicioCorte || '')}" aria-label="Hora de início do corte" />
+        </div>
       </div>
 
       <div class="field">
-        <label for="f-fim-corte">Data Final do Corte (opcional)</label>
-        <input id="f-fim-corte" type="date" value="${escapeHtml(st.dataFinalCorte)}" />
+        <label for="f-fim-corte">Data e hora final do corte (opcional)</label>
+        <div class="data-hora">
+          <input id="f-fim-corte" type="date" value="${escapeHtml(st.dataFinalCorte)}" />
+          <input id="f-hora-fim-corte" type="time" value="${escapeHtml(st.horaFinalCorte || '')}" aria-label="Hora final do corte" />
+        </div>
+        <div class="row__meta" style="margin-top:6px">Os botões "Iniciar corte" e "Finalizar corte" da lista já gravam a hora certinha. Aqui é pra corrigir.</div>
       </div>
 
       ${
@@ -263,6 +346,8 @@ async function renderCorteForm(view) {
   document.getElementById('f-func-corte').addEventListener('change', (ev) => (st.funcionarioCorteId = ev.target.value));
   document.getElementById('f-inicio-corte').addEventListener('input', (ev) => (st.dataInicioCorte = ev.target.value));
   document.getElementById('f-fim-corte').addEventListener('input', (ev) => (st.dataFinalCorte = ev.target.value));
+  document.getElementById('f-hora-inicio-corte').addEventListener('input', (ev) => (st.horaInicioCorte = ev.target.value));
+  document.getElementById('f-hora-fim-corte').addEventListener('input', (ev) => (st.horaFinalCorte = ev.target.value));
 
   const imagensInput = document.getElementById('f-imagens-corte');
   if (imagensInput) {
@@ -358,8 +443,9 @@ async function salvarCorte(view) {
   }
 
   pc.status = st.status;
-  pc.dataInicioCorte = st.dataInicioCorte ? Const.inputDateParaTimestamp(st.dataInicioCorte) : null;
-  pc.dataFinalCorte = st.dataFinalCorte ? Const.inputDateParaTimestamp(st.dataFinalCorte) : null;
+  // se não mexeu na data/hora, mantém o instante exato do botão
+  pc.dataInicioCorte = Tempo.deInputs(st.dataInicioCorte, st.horaInicioCorte, st.inicioOriginal);
+  pc.dataFinalCorte = Tempo.deInputs(st.dataFinalCorte, st.horaFinalCorte, st.finalOriginal);
   pc.imagens = st.imagens;
 
   if (st.funcionarioCorteId) {

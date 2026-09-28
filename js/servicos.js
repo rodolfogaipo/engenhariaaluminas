@@ -136,6 +136,8 @@ function servicoVisivelPara(s, userId) {
 }
 
 async function atualizarListaServicos(view) {
+  // tempo gasto em cada serviço — só o Admin vê
+  const tempos = Auth.isAdmin() ? await Tempo.calcular(true) : null;
   // categorias que vão pro Ateliê (etiqueta com a situação em cada serviço)
   const [catsAtelie, inicioAtelie] = await Promise.all([Atelie.nomesCategorias(), Atelie.inicio()]);
   const user = Auth.current;
@@ -216,6 +218,13 @@ async function atualizarListaServicos(view) {
             user.tipo === 'admin'
               ? `<button class="btn btn--ghost" data-editar="${s.id}" style="padding:6px 12px; font-size:13px">Editar</button>`
               : '';
+          const tempoInfo = tempos ? tempos.get(s.id) : null;
+          const tempoBtn =
+            tempoInfo && (tempoInfo.status === 'medido' || tempoInfo.status === 'desconsiderado')
+              ? `<button class="btn btn--ghost" data-desconsiderar-tempo="${s.id}" style="padding:6px 12px; font-size:13px">${
+                  tempoInfo.status === 'desconsiderado' ? 'Voltar a contar o tempo' : 'Desconsiderar tempo'
+                }</button>`
+              : '';
           const delBtn =
             user.tipo === 'admin'
               ? `<button class="btn btn--danger" data-excluir="${s.id}" style="padding:6px 12px; font-size:13px">Excluir</button>`
@@ -277,6 +286,7 @@ async function atualizarListaServicos(view) {
               }
               ${s.materialNome ? `<div class="row__meta">${escapeHtml(s.materialTipo || 'Material')}: <b>${escapeHtml(s.materialNome)}</b>${s.materialLargura != null ? ` · ${formatarLarguraMaterial(s.materialLargura)}` : ''}</div>` : ''}
               ${s.dataFinal ? `<div class="row__meta">Erros: ${s.erros || 0} · Erros novos: ${s.errosNovos || 0}</div>` : ''}
+              ${tempos ? Tempo.linhaLista(tempos.get(s.id)) : ''}
               ${s.observacoes ? `<div class="row__meta" style="font-style:italic">📝 ${escapeHtml(s.observacoes)}</div>` : ''}
               ${
                 s.anexos && s.anexos.filter((a) => a.tipo === 'imagem').length
@@ -315,6 +325,7 @@ async function atualizarListaServicos(view) {
               ${validarBtn}
               ${aprovBtn}
               ${editBtn}
+              ${tempoBtn}
               ${delBtn}
             </div>
           </div>`;
@@ -329,6 +340,17 @@ async function atualizarListaServicos(view) {
       if (chk.checked) ServicosView.selecionados.add(id);
       else ServicosView.selecionados.delete(id);
       renderBarraSelecao(view);
+    });
+  });
+
+  listaEl.querySelectorAll('[data-desconsiderar-tempo]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const registro = await DB.get('servicos', btn.dataset.desconsiderarTempo);
+      if (!registro) return;
+      registro.tempoDesconsiderado = !registro.tempoDesconsiderado;
+      await DB.put('servicos', registro);
+      Tempo.limparCache();
+      atualizarListaServicos(view);
     });
   });
 
@@ -488,6 +510,8 @@ function criarEstadoFormularioVazio() {
     funcionarioId: null, // atribuição feita pelo Admin (opcional)
     dataInicioAdmin: '',
     dataFinalAdmin: '',
+    horaInicioAdmin: '',
+    horaFinalAdmin: '',
     anexos: [],
     material: null, // { id, nome, tipo, largura } — só Corte Tecido/Tela/Couro
     materialBusca: '',
@@ -518,6 +542,10 @@ function criarEstadoFormularioEdicao(registro) {
     funcionarioId: registro.funcionarioId || null,
     dataInicioAdmin: dataParaInputDate(registro.iniciadoEm),
     dataFinalAdmin: dataParaInputDate(registro.dataFinal),
+    horaInicioAdmin: Tempo.paraInputs(registro.iniciadoEm).hora,
+    horaFinalAdmin: Tempo.paraInputs(registro.concluidoInformadoEm || registro.dataFinal).hora,
+    iniciadoEmOriginal: registro.iniciadoEm || null,
+    finalOriginal: registro.concluidoInformadoEm || registro.dataFinal || null,
     anexos: registro.anexos ? [...registro.anexos] : [],
     tipoOriginal: registro.tipo,
     movel: registro.movel || '',
@@ -600,6 +628,7 @@ async function renderServicoForm(view) {
                 <option value="">Disponível para qualquer um</option>
                 ${funcionariosCache.map((u) => `<option value="${u.id}" ${u.id === st.funcionarioId ? 'selected' : ''}>${escapeHtml(u.nome)}</option>`).join('')}
               </select>
+              <div id="sugestao-tempo" class="sugestao-tempo"></div>
             </div>`
           : ''
       }
@@ -608,14 +637,21 @@ async function renderServicoForm(view) {
         ehAdmin
           ? `<div style="display:flex; gap:12px">
               <div class="field" style="flex:1">
-                <label for="f-data-inicio-adm">Data Início (opcional)</label>
-                <input id="f-data-inicio-adm" type="date" value="${escapeHtml(st.dataInicioAdmin || '')}" />
+                <label for="f-data-inicio-adm">Data e hora de início (opcional)</label>
+                <div class="data-hora">
+                  <input id="f-data-inicio-adm" type="date" value="${escapeHtml(st.dataInicioAdmin || '')}" />
+                  <input id="f-hora-inicio-adm" type="time" value="${escapeHtml(st.horaInicioAdmin || '')}" aria-label="Hora de início" />
+                </div>
               </div>
               <div class="field" style="flex:1">
-                <label for="f-data-fim-adm">Data Final (opcional)</label>
-                <input id="f-data-fim-adm" type="date" value="${escapeHtml(st.dataFinalAdmin || '')}" />
+                <label for="f-data-fim-adm">Data e hora final (opcional)</label>
+                <div class="data-hora">
+                  <input id="f-data-fim-adm" type="date" value="${escapeHtml(st.dataFinalAdmin || '')}" />
+                  <input id="f-hora-fim-adm" type="time" value="${escapeHtml(st.horaFinalAdmin || '')}" aria-label="Hora final" />
+                </div>
               </div>
             </div>
+            <div class="row__meta" style="margin-top:-8px; margin-bottom:6px">⏱ Com a hora preenchida no início e no fim, o app calcula o tempo gasto. Se alguém esqueceu de finalizar, acerte aqui.</div>
             <div class="row__meta" style="margin-top:-8px; margin-bottom:14px">
               Preencha a Data Final pra já lançar o serviço como concluído (ex: em nome de um funcionário que fez algo e você está registrando depois). Sem Data Final, o serviço fica "Disponível" ou "Em andamento".
             </div>`
@@ -691,12 +727,27 @@ async function renderServicoForm(view) {
   document.getElementById('f-obs').addEventListener('input', (ev) => (st.observacoes = ev.target.value));
 
   if (ehAdmin) {
+    atualizarSugestaoTempo();
+    // o nome digitado muda o tipo de móvel → atualiza a sugestão
+    if (!view._sugestaoLigada) {
+      view._sugestaoLigada = true;
+      view.addEventListener('input', (ev) => {
+        if (ev.target && /^f-(nome|cat-nome|movel)$/.test(ev.target.id || '')) {
+          clearTimeout(ServicosView._tSug);
+          ServicosView._tSug = setTimeout(atualizarSugestaoTempo, 400);
+        }
+      });
+    }
     const funcSelect = document.getElementById('f-func-resp');
     if (funcSelect) funcSelect.addEventListener('change', (ev) => (st.funcionarioId = ev.target.value || null));
     const inicioEl = document.getElementById('f-data-inicio-adm');
     const fimEl = document.getElementById('f-data-fim-adm');
     if (inicioEl) inicioEl.addEventListener('input', (ev) => (st.dataInicioAdmin = ev.target.value));
     if (fimEl) fimEl.addEventListener('input', (ev) => (st.dataFinalAdmin = ev.target.value));
+    const horaIniEl = document.getElementById('f-hora-inicio-adm');
+    const horaFimEl = document.getElementById('f-hora-fim-adm');
+    if (horaIniEl) horaIniEl.addEventListener('input', (ev) => (st.horaInicioAdmin = ev.target.value));
+    if (horaFimEl) horaFimEl.addEventListener('input', (ev) => (st.horaFinalAdmin = ev.target.value));
 
     const anexosInput = document.getElementById('f-anexos');
     if (anexosInput) {
@@ -1120,12 +1171,14 @@ async function salvarServico(view) {
         registro.iniciadoEm = null; // sem funcionário, volta a ficar "Disponível"
       }
 
-      // Admin pode ajustar Data Início e Data Final diretamente
-      registro.iniciadoEm = st.dataInicioAdmin ? Const.inputDateParaTimestamp(st.dataInicioAdmin) : null;
-      const novaDataFinal = st.dataFinalAdmin ? Const.inputDateParaTimestamp(st.dataFinalAdmin) : null;
-      registro.dataFinal = novaDataFinal;
+      // Admin pode ajustar Data/Hora de Início e Final diretamente. Se não
+      // mexeu, mantém o instante exato do clique em "Começar"/"Concluir".
+      registro.iniciadoEm = Tempo.deInputs(st.dataInicioAdmin, st.horaInicioAdmin, st.iniciadoEmOriginal);
+      const novaDataFinal = Tempo.deInputs(st.dataFinalAdmin, st.horaFinalAdmin, st.finalOriginal);
+      const finalMudou = novaDataFinal !== st.finalOriginal;
+      registro.dataFinal = finalMudou ? novaDataFinal : registro.dataFinal;
       if (novaDataFinal) {
-        registro.concluidoInformadoEm = registro.concluidoInformadoEm || novaDataFinal;
+        registro.concluidoInformadoEm = finalMudou ? novaDataFinal : registro.concluidoInformadoEm || novaDataFinal;
         registro.validadoPeloAdmin = true;
       } else {
         registro.concluidoInformadoEm = null;
@@ -1169,8 +1222,8 @@ async function salvarServico(view) {
     // se o Admin já preencheu Data Início/Final na hora de lançar, o
     // serviço nasce direto como em andamento ou já concluído (ex:
     // lançamento retroativo em nome de um funcionário)
-    iniciadoEmFinal = st.dataInicioAdmin ? Const.inputDateParaTimestamp(st.dataInicioAdmin) : null;
-    dataFinalFinal = st.dataFinalAdmin ? Const.inputDateParaTimestamp(st.dataFinalAdmin) : null;
+    iniciadoEmFinal = Tempo.deInputs(st.dataInicioAdmin, st.horaInicioAdmin, null);
+    dataFinalFinal = Tempo.deInputs(st.dataFinalAdmin, st.horaFinalAdmin, null);
     if (dataFinalFinal) {
       concluidoInformadoEmFinal = dataFinalFinal;
       validadoPeloAdminFinal = true;
@@ -1214,6 +1267,41 @@ function fotoMiniMaterial(m) {
   const foto = m && (m.imagens || []).find((im) => im.linkImagem);
   if (!foto) return '';
   return `<img src="${foto.linkImagem}" alt="" referrerpolicy="no-referrer" style="width:40px; height:40px; object-fit:cover; border-radius:6px; border:1px solid var(--line); flex:0 0 auto" />`;
+}
+
+/* Sugestão ao atribuir (só Admin): quanto cada um costuma levar nesse
+   tipo de móvel + categoria (mediana, com 3 ou mais serviços medidos) */
+async function atualizarSugestaoTempo() {
+  const st = ServicosView.formState;
+  const el = document.getElementById('sugestao-tempo');
+  if (!st || !el) return;
+  const nome = st.nomeLivre || (st.catalogoSelecionado && st.catalogoSelecionado.nome) || st.catalogoNome || '';
+  const campoNome = document.getElementById('f-nome') || document.getElementById('f-cat-nome');
+  const nomeAtual = (campoNome && campoNome.value) || nome;
+  const movelCampo = document.getElementById('f-movel');
+  const tipoMovel = Tempo.tipoMovel(nomeAtual, (movelCampo && movelCampo.value) || st.movel);
+  if (!st.tipo) {
+    el.innerHTML = '';
+    return;
+  }
+  const amostras = await Tempo.amostras();
+  const carga = await Tempo.cargaAtual();
+  const pessoas = (funcionariosCache || []).filter((u) => u.tipo === 'funcionario');
+  const chave = `${tipoMovel}|${st.tipo}`;
+  const linhas = pessoas.map((u) => {
+    const a = amostras[u.id];
+    const lista = a ? a.cruz[chave] || [] : [];
+    const listaCat = a ? a.cats[st.tipo] || [] : [];
+    const txt =
+      lista.length >= MIN_AMOSTRAS
+        ? `<b>${Tempo.curto(Tempo.mediana(lista))}</b> <small>(${lista.length})</small>`
+        : listaCat.length >= MIN_AMOSTRAS
+        ? `${Tempo.curto(Tempo.mediana(listaCat))} <small>em ${escapeHtml(st.tipo)} no geral (${listaCat.length})</small>`
+        : '<small>poucos dados</small>';
+    const c = carga[u.id] || 0;
+    return `<span class="sugestao-tempo__item">${escapeHtml(primeiroNome(u.nome))}: ${txt}${c ? ` <small>· ${c} em andamento</small>` : ''}</span>`;
+  });
+  el.innerHTML = `⏱ Costuma levar em <b>${escapeHtml(tipoMovel)} · ${escapeHtml(st.tipo)}</b>: ${linhas.join('')}`;
 }
 
 function aplicarMovelNoRegistro(registro, st) {

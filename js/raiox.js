@@ -235,6 +235,13 @@ async function renderRaioXIndividual(cont, view, funcionarioId, doPeriodo, itens
     </div>
   `;
 
+  // produtividade e tempo gasto — só o Admin vê
+  if (Auth.isAdmin()) {
+    const el = document.createElement('div');
+    cont.appendChild(el);
+    renderRaioXTempo(el, funcionarioId, periodo, itensTodos);
+  }
+
   ligarPdfRaioX(cont, () =>
     montarPdfRaioXIndividual({ pessoa, periodo, totais, categorias, faixas, serieErros, serieNovos, totalErrosJanela, totalNovosJanela, totalQtdJanela })
   );
@@ -343,6 +350,12 @@ async function renderRaioXComparar(cont, view, funcionarios, doPeriodo, itensTod
       </div>
     </div>
   `;
+
+  {
+    const el = document.createElement('div');
+    cont.appendChild(el);
+    renderRaioXTempoEquipe(el, funcionarios, periodo, itensTodos);
+  }
 
   ligarPdfRaioX(cont, () => montarPdfRaioXComparar({ periodo, categorias, porFunc, faixas, seriesQualidade, doPeriodo }));
 

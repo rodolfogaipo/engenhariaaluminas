@@ -130,6 +130,7 @@ async function renderAdminMais(cont) {
       <p class="section-sub">Diferente do backup: exporta só os serviços concluídos do período, funcionário ou seleção que você escolher, numa tabela limpa pronta pro Excel.</p>
       <button class="btn btn--metal" id="btn-ir-exportar">Escolher o que exportar</button>
     </div>
+    <div id="feriados-cont"></div>
 
     ${
       gruposDuplicados.length > 0
@@ -204,6 +205,8 @@ async function renderAdminMais(cont) {
     }
     btn.disabled = false;
   });
+
+  renderCartaoFeriados(document.getElementById('feriados-cont'));
 
   document.getElementById('btn-ir-exportar').addEventListener('click', () => {
     RelatorioView.aba = 'relatorio';
@@ -973,6 +976,7 @@ async function fazerBackup() {
     'produtos_mkt',
     'materiais',
     'categorias_material',
+    'feriados',
   ];
 
   const dados = { exportadoEm: Date.now() };
