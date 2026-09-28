@@ -11,7 +11,33 @@ const MktView = {
   formState: null,
   modoSelecao: false, // marcar produtos pra gerar a ficha em PDF
   selecionados: new Set(),
+  ordem: 'recentes', // 'recentes' | 'antigos' | 'az' | 'linha'
 };
+
+/* Linha de produto: o nome sem o tipo de móvel, sem medidas e sem
+   palavras de variação. POLTRONA GAVELAR, SOFÁ GAVELAR 2,20 e MESA DE
+   CENTRO GAVELAR → linha GAVELAR. */
+const TIPOS_PRODUTO_MKT = new Set(
+  ('SOFA SOFAS POLTRONA POLTRONAS CADEIRA CADEIRAS BANQUETA BANQUETAS BANCO ESPREGUICADEIRA ESPREGUICADEIRAS ' +
+    'MESA MESAS MESINHA PUFF PUFE PUFES CHAISE OMBRELONE CAMA DAYBED NAMORADEIRA BALANCO APARADOR RECAMIER ' +
+    'BISTRO LOUNGE CABANA PERGOLADO GAZEBO CARRINHO BAU RACK BUFFET MODULO MODULOS BANCADA SOLARIUM').split(' ')
+);
+const PALAVRAS_VARIACAO_MKT = new Set(
+  ('DE DA DO DAS DOS E COM SEM JANTAR SALA CENTRO LATERAL APOIO CANTO BRACO BRACOS ALTO ALTA BAIXO BAIXA ' +
+    'GIRATORIA GIRATORIO REDONDA REDONDO QUADRADA QUADRADO RETANGULAR OVAL PEQUENA PEQUENO GRANDE MEDIA MEDIO ' +
+    'BAR ESQUERDO ESQUERDA DIREITO DIREITA SIMPLES DUPLO DUPLA I II III IV').split(' ')
+);
+
+function linhaDoProdutoMkt(nome) {
+  const palavras = String(nome || '').trim().split(/\s+/);
+  const resto = palavras.filter((w) => {
+    const n = w.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!n) return false;
+    if (/\d/.test(n) || n === 'X') return false; // medidas (2,20 / 1,00 X 1,00)
+    return !TIPOS_PRODUTO_MKT.has(n) && !PALAVRAS_VARIACAO_MKT.has(n);
+  });
+  return (resto.length ? resto.join(' ') : String(nome || '').trim()).toUpperCase();
+}
 
 function podeEditarMkt() {
   const tipo = Auth.current?.tipo;
@@ -65,6 +91,18 @@ async function renderMktLista(view) {
       <input id="busca-mkt" placeholder="Buscar por nome…" value="${escapeHtml(MktView.filtroTexto)}" />
     </div>
 
+    <div class="chips" style="margin:-8px 0 16px">
+      <span class="row__meta" style="align-self:center">Ordenar:</span>
+      ${[
+        ['recentes', 'Mais recentes'],
+        ['antigos', 'Mais antigos'],
+        ['az', 'A → Z'],
+        ['linha', 'Por linha de produto'],
+      ]
+        .map(([v, l]) => `<button class="chip ${MktView.ordem === v ? 'chip--on' : ''}" data-ordem-mkt="${v}">${l}</button>`)
+        .join('')}
+    </div>
+
     <div id="barra-mkt"></div>
     <div id="mkt-previa"></div>
     <div id="lista-mkt"></div>
@@ -84,6 +122,13 @@ async function renderMktLista(view) {
     });
   }
 
+  view.querySelectorAll('[data-ordem-mkt]').forEach((b) =>
+    b.addEventListener('click', () => {
+      MktView.ordem = b.dataset.ordemMkt;
+      view.querySelectorAll('[data-ordem-mkt]').forEach((x) => x.classList.toggle('chip--on', x === b));
+      atualizarListaMkt(view);
+    })
+  );
   const buscaInput = document.getElementById('busca-mkt');
   buscaInput.addEventListener('input', () => {
     MktView.filtroTexto = buscaInput.value;
@@ -107,8 +152,15 @@ async function atualizarListaMkt(view) {
   const filtro = (MktView.filtroTexto || '').trim().toLowerCase();
   const filtrados = todos
     .filter((p) => !somenteAprovados || p.aprovado === 'aprovado')
-    .filter((p) => !filtro || (p.nome || '').toLowerCase().includes(filtro))
-    .sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0));
+    .filter((p) => !filtro || (p.nome || '').toLowerCase().includes(filtro) || linhaDoProdutoMkt(p.nome).toLowerCase().includes(filtro))
+    .sort((a, b) => {
+      const porNome = (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { numeric: true });
+      if (MktView.ordem === 'az') return porNome;
+      if (MktView.ordem === 'antigos') return (a.criadoEm || 0) - (b.criadoEm || 0);
+      if (MktView.ordem === 'linha')
+        return linhaDoProdutoMkt(a.nome).localeCompare(linhaDoProdutoMkt(b.nome), 'pt-BR', { numeric: true }) || porNome;
+      return (b.criadoEm || 0) - (a.criadoEm || 0);
+    });
 
   const listaEl = document.getElementById('lista-mkt');
   if (!listaEl) return;
@@ -127,8 +179,7 @@ async function atualizarListaMkt(view) {
     return;
   }
 
-  listaEl.innerHTML = filtrados
-    .map((p) => {
+  const cartaoMkt = (p) => {
       const medidas = CAMPOS_MEDIDA.filter((c) => p[c.chave] != null && p[c.chave] !== '')
         .map((c) => `<div>${c.label}: ${escapeHtml(String(p[c.chave]))}cm</div>`)
         .join('');
@@ -180,8 +231,25 @@ async function atualizarListaMkt(view) {
           </div>
         </div>
       </div>`;
-    })
-    .join('');
+  };
+
+  if (MktView.ordem === 'linha') {
+    // agrupado por linha de produto, com um título pra cada linha
+    const grupos = [];
+    filtrados.forEach((p) => {
+      const l = linhaDoProdutoMkt(p.nome);
+      if (!grupos.length || grupos[grupos.length - 1].linha !== l) grupos.push({ linha: l, itens: [] });
+      grupos[grupos.length - 1].itens.push(p);
+    });
+    listaEl.innerHTML = grupos
+      .map(
+        (g) => `<div class="linha-produto">Linha ${escapeHtml(g.linha)} <small>${g.itens.length} produto${g.itens.length === 1 ? '' : 's'}</small></div>
+          ${g.itens.map(cartaoMkt).join('')}`
+      )
+      .join('');
+  } else {
+    listaEl.innerHTML = filtrados.map(cartaoMkt).join('');
+  }
 
   listaEl.querySelectorAll('.chk-mkt').forEach((chk) =>
     chk.addEventListener('change', () => {

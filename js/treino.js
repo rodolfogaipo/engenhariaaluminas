@@ -6,6 +6,7 @@
    ========================================================= */
 
 const TreinoView = {
+  ordem: 'recentes', // 'recentes' | 'antigos' | 'az'
   subView: 'lista', // 'lista' | 'form'
   formState: null,
   filtroTexto: '',
@@ -58,6 +59,16 @@ async function renderTreinoLista(view) {
       <input id="busca-treino" placeholder="Buscar por título, descrição ou nome do anexo…" value="${escapeHtml(TreinoView.filtroTexto)}" />
     </div>
     <div id="barra-treino"></div>
+    <div class="chips" style="margin:-8px 0 16px">
+      <span class="row__meta" style="align-self:center">Ordenar:</span>
+      ${[
+        ['recentes', 'Mais recentes'],
+        ['antigos', 'Ordem de cadastro'],
+        ['az', 'A → Z'],
+      ]
+        .map(([v, l]) => `<button class="chip ${TreinoView.ordem === v ? 'chip--on' : ''}" data-ordem-treino="${v}">${l}</button>`)
+        .join('')}
+    </div>
     <div id="lista-treino"></div>
     <div id="treino-previa"></div>
   `;
@@ -68,6 +79,13 @@ async function renderTreinoLista(view) {
     renderTreinoLista(view);
   });
 
+  view.querySelectorAll('[data-ordem-treino]').forEach((b) =>
+    b.addEventListener('click', () => {
+      TreinoView.ordem = b.dataset.ordemTreino;
+      view.querySelectorAll('[data-ordem-treino]').forEach((x) => x.classList.toggle('chip--on', x === b));
+      atualizarListaTreino(view);
+    })
+  );
   const buscaInput = document.getElementById('busca-treino');
   buscaInput.addEventListener('input', () => {
     TreinoView.filtroTexto = buscaInput.value;
@@ -97,7 +115,11 @@ async function atualizarListaTreino(view) {
         (t.anexos || []).some((a) => normalizaBuscaTreino(a.nome).includes(filtro))
       );
     })
-    .sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0));
+    .sort((a, b) => {
+      if (TreinoView.ordem === 'az') return (a.titulo || '').localeCompare(b.titulo || '', 'pt-BR', { numeric: true });
+      if (TreinoView.ordem === 'antigos') return (a.criadoEm || 0) - (b.criadoEm || 0);
+      return (b.criadoEm || 0) - (a.criadoEm || 0);
+    });
 
   const listaEl = document.getElementById('lista-treino');
   if (!listaEl) return;
