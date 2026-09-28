@@ -219,6 +219,7 @@ async function renderAproveitamentoConteudo(cont) {
 
 async function renderDashboardEquipe(cont) {
   cont.innerHTML = `
+    <div id="destaque-cont" style="margin-bottom:16px"></div>
     <div class="card" style="margin-bottom:16px">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
         <div style="display:flex; gap:8px">
@@ -265,6 +266,7 @@ async function renderDashboardEquipe(cont) {
     renderDashboardEquipe(cont);
   });
 
+  renderCartaoDestaque(document.getElementById('destaque-cont'));
   await renderDashboardEquipeConteudo(document.getElementById('dash-equipe-conteudo'));
 }
 
