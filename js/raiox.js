@@ -368,6 +368,17 @@ async function renderRaioXComparar(cont, view, funcionarios, doPeriodo, itensTod
 }
 
 
+// só Admin: acrescenta a parte de tempo no fim do PDF completo, numa folha nova
+async function anexarTempoAoPdfRaioX(blocos) {
+  const ctx = RaioXView._tempoCtx;
+  if (!RaioXView.pdfComTempo || !Auth.isAdmin() || !ctx) return;
+  const r =
+    ctx.modo === 'equipe'
+      ? await blocosTempoEquipe(ctx.funcionarios, ctx.itensTodos)
+      : await blocosTempoIndividual(ctx.funcionarioId, ctx.itensTodos);
+  blocos.push({ tipo: 'quebra' }, ...r.blocos);
+}
+
 /* ---------------- PDF DO RAIO-X ----------------
    Sai exatamente o que está na tela: a pessoa (ou a comparação da
    equipe, só Admin) no período escolhido, com o Painel de Qualidade. */
@@ -379,6 +390,11 @@ function ligarPdfRaioX(cont, montar) {
       <div>
         <b style="font-size:14px">PDF deste Raio-X</b>
         <div class="row__meta" id="rx-pdf-status">Sai o que está na tela, no período escolhido. Na impressão, escolha "Salvar como PDF".</div>
+        ${
+          Auth.isAdmin()
+            ? `<label class="rx-pdf-tempo"><input type="checkbox" id="rx-pdf-tempo" ${RaioXView.pdfComTempo ? 'checked' : ''} /> Incluir tempo gasto (com o período e os tipos escolhidos na seção de tempo)</label>`
+            : ''
+        }
       </div>
       <div style="display:flex; gap:8px">
         <button class="btn btn--ghost" id="rx-pdf-ver" style="padding:8px 14px; font-size:13px">Visualizar</button>
@@ -387,6 +403,8 @@ function ligarPdfRaioX(cont, montar) {
     </div>
     <div id="rx-previa"></div>`;
   cont.appendChild(bloco);
+  const chkTempo = document.getElementById('rx-pdf-tempo');
+  if (chkTempo) chkTempo.addEventListener('change', () => (RaioXView.pdfComTempo = chkTempo.checked));
   const status = (msg) => {
     const el = document.getElementById('rx-pdf-status');
     if (el) el.textContent = msg;
@@ -460,6 +478,7 @@ async function montarPdfRaioXIndividual(d) {
       d.totalQtdJanela ? ` · ${formatarNumero((d.totalErrosJanela + d.totalNovosJanela) / d.totalQtdJanela, 2)} por serviço` : ''
     }</p></div>`,
   });
+  await anexarTempoAoPdfRaioX(blocos);
   return montarPdfPadrao(blocos, {
     titulo: `Raio-X — ${d.pessoa ? d.pessoa.nome : 'Funcionário'}`,
     periodo: d.periodo.rotulo,
@@ -525,6 +544,7 @@ async function montarPdfRaioXComparar(d) {
       { minMaximo: 2, altura: 190, largura: 640 }
     )}</div>`,
   });
+  await anexarTempoAoPdfRaioX(blocos);
   return montarPdfPadrao(blocos, {
     titulo: 'Raio-X — Comparação da equipe',
     periodo: d.periodo.rotulo,

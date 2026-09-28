@@ -845,6 +845,15 @@ async function salvarServicoComTratamentoDeErro(view) {
 function voltarParaLista() {
   ServicosView.subView = 'lista';
   ServicosView.formState = null;
+  // veio de outra aba (ex: Editar no Ateliê)? volta pra ela
+  const origem = ServicosView.voltarPara;
+  ServicosView.voltarPara = null;
+  if (origem && origem !== 'servicos' && currentTabs().some((t) => t.id === origem)) {
+    activeTab = origem;
+    renderTabbar();
+    renderView(origem);
+    return;
+  }
   renderView('servicos');
 }
 

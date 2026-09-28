@@ -189,6 +189,12 @@ const Analise = {
 
   async periodo(tipo, ref, inicioStr, fimStr) {
     const d = new Date(ref);
+    if (tipo === 'dia') {
+      const inicio = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const fim = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+      const dias = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+      return { inicio, fim, rotulo: `${formatarDataCurta(inicio)} (${dias[d.getDay()]})` };
+    }
     if (tipo === 'semana') {
       const idx = await Metrics.indiceSemana(ref);
       const r = await Metrics.rangeDaSemanaPorIndice(idx);
@@ -216,6 +222,7 @@ const Analise = {
 
   navegar(tipo, ref, direcao) {
     const d = new Date(ref);
+    if (tipo === 'dia') return new Date(d.getFullYear(), d.getMonth(), d.getDate() + direcao, 12).getTime();
     if (tipo === 'semana') return ref + direcao * 7 * 24 * 60 * 60 * 1000;
     if (tipo === 'mes') return new Date(d.getFullYear(), d.getMonth() + direcao, 15).getTime();
     if (tipo === 'ano') return new Date(d.getFullYear() + direcao, 6, 1).getTime();
@@ -223,6 +230,7 @@ const Analise = {
   },
 
   async periodoEhAtual(tipo, ref) {
+    if (tipo === 'dia') return new Date(ref).toDateString() === new Date().toDateString() || ref > Date.now();
     if (tipo === 'semana') return (await Metrics.indiceSemana(ref)) >= (await Metrics.indiceSemana(Date.now()));
     const d = new Date(ref);
     const h = new Date();

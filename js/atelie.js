@@ -482,6 +482,7 @@ function ligarAcoesAtelie(listaEl, view, filtrados, redesenhar) {
       if (!registro) return;
       ServicosView.subView = 'form';
       ServicosView.formState = criarEstadoFormularioEdicao(registro);
+      ServicosView.voltarPara = 'atelie'; // ao salvar/cancelar, volta pro Ateliê
       activeTab = 'servicos';
       renderTabbar();
       renderView('servicos');

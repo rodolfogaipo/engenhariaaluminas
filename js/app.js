@@ -149,8 +149,25 @@ function renderShell(root) {
         return;
       }
       garantirAbaPermitida();
-      renderView(activeTab);
+      const viewEl = document.getElementById('view');
+      const rolagem = viewEl ? viewEl.scrollTop : 0;
+      const tabAgora = activeTab;
+      await renderView(activeTab);
       renderTabbar();
+      // dados novos chegaram: redesenha sem jogar a pessoa pro topo
+      if (viewEl && rolagem && !PosicaoLista[tabAgora]) {
+        let n = 0;
+        const manter = () => {
+          if (activeTab !== tabAgora) return;
+          if (viewEl.scrollHeight >= rolagem + viewEl.clientHeight || n > 10) {
+            viewEl.scrollTop = rolagem;
+            return;
+          }
+          n++;
+          setTimeout(manter, 120);
+        };
+        manter();
+      }
     }, 250);
   };
 }
@@ -220,7 +237,69 @@ function exibirBadge(tabId, quantidade) {
 
 /* ---------- TELAS ---------- */
 
+/* ---------------- VOLTAR NO MESMO LUGAR ----------------
+   Ao tocar em Editar/Concluir/Atualizar num item, o app guarda a aba, o
+   item e a rolagem. Depois de salvar ou cancelar, a lista volta rolada
+   até aquele item (com um destaque rápido), em vez de ir pro topo. */
+const PosicaoLista = {};
+
+document.addEventListener(
+  'click',
+  (ev) => {
+    const btn = ev.target && ev.target.closest ? ev.target.closest('button') : null;
+    if (!btn) return;
+    const chave = Object.keys(btn.dataset || {}).find((k) => /editar|concluir|validar|atualizar|renomear/i.test(k));
+    if (!chave) return;
+    const view = document.getElementById('view');
+    PosicaoLista[activeTab] = { id: btn.dataset[chave], scroll: view ? view.scrollTop : 0, em: Date.now() };
+  },
+  true
+);
+
+function acharItemNaLista(view, id) {
+  if (!id) return null;
+  const btn = Array.from(view.querySelectorAll('button')).find((b) => Object.values(b.dataset || {}).includes(id));
+  return btn ? btn.closest('.row, .card, .atelie-item') || btn : null;
+}
+
+function restaurarPosicao(tab) {
+  const pos = PosicaoLista[tab];
+  if (!pos) return;
+  if (Date.now() - pos.em > 30 * 60 * 1000) {
+    delete PosicaoLista[tab];
+    return;
+  }
+  const view = document.getElementById('view');
+  let tentativas = 0;
+  const tentar = () => {
+    if (activeTab !== tab || !view) return;
+    const item = acharItemNaLista(view, pos.id);
+    const temFormulario = view.querySelector('[id^="btn-salvar"]');
+    if (item && !temFormulario) {
+      item.scrollIntoView({ block: 'center' });
+      if (!pos.restauradoEm) {
+        item.classList.remove('item-voltou');
+        void item.offsetWidth;
+        item.classList.add('item-voltou');
+        pos.restauradoEm = Date.now();
+      }
+      // a lista ainda pode ser redesenhada logo depois de salvar (dados
+      // chegando do servidor) — continua segurando o lugar por 3 s
+      if (Date.now() - pos.restauradoEm > 3000) delete PosicaoLista[tab];
+      return;
+    }
+    if (++tentativas < 20) setTimeout(tentar, 150);
+    else if (!temFormulario && pos.restauradoEm == null && view.scrollHeight > pos.scroll) view.scrollTop = pos.scroll;
+  };
+  tentar();
+}
+
 async function renderView(tab) {
+  await renderViewDesenhar(tab);
+  restaurarPosicao(tab);
+}
+
+async function renderViewDesenhar(tab) {
   const view = document.getElementById('view');
   if (!view) return;
 

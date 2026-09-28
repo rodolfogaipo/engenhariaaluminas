@@ -453,7 +453,15 @@ async function renderCartaoFeriados(cont) {
   );
 }
 
-/* ---------------- RAIO-X (só Admin) ---------------- */
+/* ---------------- RAIO-X (só Admin) ----------------
+   A seção de tempo tem o próprio período (Dia/Semana/Mês/Ano/Tudo) e a
+   escolha dos tipos de móvel — é o Admin quem decide o que comparar. */
+
+const TempoView = {
+  periodoTipo: 'mes', // 'dia' | 'semana' | 'mes' | 'ano' | 'tudo'
+  dataReferencia: Date.now(),
+  tipos: [], // tipos de móvel escolhidos; vazio = todos
+};
 
 function refMesAno(periodo) {
   const ref = periodo.fim != null ? Math.min(periodo.fim - 1, Date.now()) : Date.now();
@@ -468,6 +476,14 @@ function refMesAno(periodo) {
   };
 }
 
+function tiposEscolhidos(disponiveis) {
+  return TempoView.tipos.length ? disponiveis.filter((t) => TempoView.tipos.includes(t)) : disponiveis;
+}
+
+function porDiaTxt(x) {
+  return x && x.porDia != null ? x.porDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '—';
+}
+
 function celulaMediana(lista) {
   if (!lista || !lista.length) return '<span class="tempo-vazio">—</span>';
   if (lista.length < MIN_AMOSTRAS) return `<span class="tempo-vazio">poucos dados (${lista.length})</span>`;
@@ -475,114 +491,341 @@ function celulaMediana(lista) {
   return `<b>${Tempo.hms(m)}</b><div class="tempo-sub">${Tempo.dias(m)} · ${lista.length} serviço(s)</div>`;
 }
 
-async function renderRaioXTempo(el, funcionarioId, periodo, itensTodos) {
-  el.innerHTML = `<div class="card" style="margin-top:16px"><div class="wip">${ICONS.wip}<b>Calculando tempos…</b></div></div>`;
-  const r = refMesAno(periodo);
-  const itensFunc = itensTodos.filter((i) => i.funcionarioId === funcionarioId);
-  const [mes, ano, amostras, carga] = await Promise.all([
-    Tempo.projetosPorDia(funcionarioId, r.mesIni, r.mesFim, itensFunc),
-    Tempo.projetosPorDia(funcionarioId, r.anoIni, r.anoFim, itensFunc),
-    Tempo.amostras(periodo.inicio, periodo.fim),
-    Tempo.cargaAtual(),
-  ]);
-  const a = amostras[funcionarioId] || { tipos: {}, cruz: {}, cats: {}, todos: [] };
-  const tipos = Tempo.TIPOS.filter((t) => a.tipos[t]);
-  const combos = Object.keys(a.cruz).sort((x, y) => x.localeCompare(y, 'pt-BR'));
-  const porDia = (x) => (x.porDia == null ? '—' : x.porDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 }));
+function celulaCurta(lista) {
+  if (!lista || !lista.length) return '<span class="tempo-vazio">—</span>';
+  if (lista.length < MIN_AMOSTRAS) return `<span class="tempo-vazio">poucos (${lista.length})</span>`;
+  const m = Tempo.mediana(lista);
+  return `<b>${Tempo.hms(m)}</b><div class="tempo-sub">${Tempo.dias(m)} · ${lista.length}</div>`;
+}
 
-  el.innerHTML = `
-    <div class="card" style="margin-top:16px">
-      <h3 class="section-title" style="font-size:16px">Produtividade e tempo gasto <span class="badge badge--brand">só Admin</span></h3>
-      <p class="section-sub">Projetos por dia útil (sem fim de semana, feriado e férias) e quanto tempo leva cada tipo de móvel</p>
-      <div class="stat-grid">
-        <div class="card"><div class="stat"><div class="stat__value">${porDia(mes)}</div><div class="stat__label">projetos/dia · ${escapeHtml(r.rotMes)}<br><small>${mes.projetos} em ${mes.dias} dia(s) úteis</small></div></div></div>
-        <div class="card"><div class="stat"><div class="stat__value">${porDia(ano)}</div><div class="stat__label">projetos/dia · ${escapeHtml(r.rotAno)}<br><small>${ano.projetos} em ${ano.dias} dia(s) úteis</small></div></div></div>
-        <div class="card"><div class="stat"><div class="stat__value">${carga[funcionarioId] || 0}</div><div class="stat__label">serviço(s) em andamento agora</div></div></div>
-        <div class="card"><div class="stat"><div class="stat__value">${a.todos.length ? Tempo.curto(Tempo.mediana(a.todos)) : '—'}</div><div class="stat__label">tempo típico por serviço<br><small>${a.todos.length} medido(s) no período</small></div></div></div>
+const NOTA_TEMPO = `Medido do "Começar" ao "Concluir" (ou "Iniciar/Finalizar corte"), das 7h às 17h em dias úteis, sem almoço e sem feriados. Tempo típico = mediana (o valor do meio, que não é puxado por esquecimentos); só aparece com ${MIN_AMOSTRAS} ou mais serviços medidos. Serviços abertos ao mesmo tempo dividem as horas. 1 dia = 9 h.`;
+
+// controles: período + tipos de móvel
+async function controlesTempoHtml(disponiveis) {
+  const st = TempoView;
+  const per = await Analise.periodo(st.periodoTipo, st.dataReferencia);
+  const ehAtual = st.periodoTipo === 'tudo' ? true : await Analise.periodoEhAtual(st.periodoTipo, st.dataReferencia);
+  return `
+    <div class="tempo-controles">
+      <div class="chips">
+        ${[['dia', 'Dia'], ['semana', 'Semana'], ['mes', 'Mês'], ['ano', 'Ano'], ['tudo', 'Tudo']]
+          .map(([v, l]) => `<button class="chip ${st.periodoTipo === v ? 'chip--on' : ''}" data-tp-periodo="${v}">${l}</button>`)
+          .join('')}
       </div>
-
-      <h4 class="rx-subtitulo">Tempo por tipo de móvel · ${escapeHtml(periodo.rotulo)}</h4>
       ${
-        tipos.length
-          ? `<div class="tabela-wrap"><table class="tabela">
-              <thead><tr><th>Tipo de móvel</th><th>Tempo típico (mediana)</th></tr></thead>
-              <tbody>${tipos.map((t) => `<tr><td>${escapeHtml(t)}</td><td>${celulaMediana(a.tipos[t])}</td></tr>`).join('')}</tbody>
-            </table></div>`
-          : '<div class="row__meta">Nenhum serviço com tempo medido nesse período ainda.</div>'
+        st.periodoTipo === 'tudo'
+          ? `<b style="font-size:14px">${escapeHtml(per.rotulo)}</b>`
+          : `<div style="display:flex; align-items:center; gap:8px">
+              <button class="topbar__icon-btn" data-tp-nav="-1" style="background:var(--paper-dim)" aria-label="Anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M15 18l-6-6 6-6"/></svg></button>
+              <b style="font-size:14px; min-width:150px; text-align:center">${escapeHtml(per.rotulo)}</b>
+              <button class="topbar__icon-btn" data-tp-nav="1" style="background:var(--paper-dim)" aria-label="Próximo" ${ehAtual ? 'disabled' : ''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M9 18l6-6-6-6"/></svg></button>
+            </div>`
       }
-
-      ${
-        combos.length
-          ? `<h4 class="rx-subtitulo">Tipo de móvel × categoria</h4>
-            <div class="tabela-wrap"><table class="tabela">
-              <thead><tr><th>Tipo de móvel</th><th>Categoria</th><th>Tempo típico (mediana)</th></tr></thead>
-              <tbody>${combos
-                .map((k) => {
-                  const [t, c] = k.split('|');
-                  return `<tr><td>${escapeHtml(t)}</td><td>${escapeHtml(c)}</td><td>${celulaMediana(a.cruz[k])}</td></tr>`;
-                })
-                .join('')}</tbody>
-            </table></div>`
-          : ''
-      }
-      <div class="row__meta" style="margin-top:10px">⏱ Medido do "Começar" ao "Concluir" (ou "Iniciar/Finalizar corte"), das 7h às 17h em dias úteis, sem almoço. Usa a mediana (o valor do meio, que não é puxado por esquecimentos) e só mostra com ${MIN_AMOSTRAS} ou mais serviços. Serviços abertos ao mesmo tempo dividem as horas. 1 dia = 9 h.</div>
+    </div>
+    <div class="tempo-tipos">
+      <span class="row__meta">Tipos de móvel:</span>
+      <button class="chip ${st.tipos.length === 0 ? 'chip--on' : ''}" data-tp-tipo="">Todos</button>
+      ${Tempo.TIPOS.map(
+        (t) =>
+          `<button class="chip ${st.tipos.includes(t) ? 'chip--on' : ''} ${disponiveis.includes(t) ? '' : 'chip--vazio'}" data-tp-tipo="${escapeHtml(t)}">${escapeHtml(t)}</button>`
+      ).join('')}
     </div>`;
 }
 
-async function renderRaioXTempoEquipe(el, funcionarios, periodo, itensTodos) {
-  el.innerHTML = `<div class="card" style="margin-top:16px"><div class="wip">${ICONS.wip}<b>Calculando tempos…</b></div></div>`;
-  const r = refMesAno(periodo);
-  const [amostras, carga] = await Promise.all([Tempo.amostras(periodo.inicio, periodo.fim), Tempo.cargaAtual()]);
+function ligarControlesTempo(el, redesenhar) {
+  const st = TempoView;
+  el.querySelectorAll('[data-tp-periodo]').forEach((b) =>
+    b.addEventListener('click', () => {
+      st.periodoTipo = b.dataset.tpPeriodo;
+      st.dataReferencia = Date.now();
+      redesenhar();
+    })
+  );
+  el.querySelectorAll('[data-tp-nav]').forEach((b) =>
+    b.addEventListener('click', () => {
+      st.dataReferencia = Analise.navegar(st.periodoTipo, st.dataReferencia, Number(b.dataset.tpNav));
+      redesenhar();
+    })
+  );
+  el.querySelectorAll('[data-tp-tipo]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const t = b.dataset.tpTipo;
+      if (!t) st.tipos = [];
+      else if (st.tipos.includes(t)) st.tipos = st.tipos.filter((x) => x !== t);
+      else st.tipos = Tempo.TIPOS.filter((x) => x === t || st.tipos.includes(x));
+      redesenhar();
+    })
+  );
+}
+
+function botoesPdfTempo(rotulo) {
+  return `
+    <div class="tempo-pdf">
+      <div class="row__meta" data-tp-status>${escapeHtml(rotulo)} — sai só essa parte, com o período e os tipos escolhidos.</div>
+      <div style="display:flex; gap:8px">
+        <button class="btn btn--ghost" data-tp-pdf="ver" style="padding:8px 14px; font-size:13px">Visualizar</button>
+        <button class="btn btn--primary" data-tp-pdf="gerar" style="padding:8px 14px; font-size:13px">Gerar PDF</button>
+      </div>
+    </div>
+    <div data-tp-previa></div>`;
+}
+
+function ligarPdfTempo(el, montar) {
+  const status = (m) => {
+    const s = el.querySelector('[data-tp-status]');
+    if (s) s.textContent = m;
+  };
+  el.querySelectorAll('[data-tp-pdf]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      status('Montando as páginas…');
+      const n = await montar();
+      if (b.dataset.tpPdf === 'ver') {
+        mostrarPreviaRelatorio(el.querySelector('[data-tp-previa]'));
+        status(`Prévia pronta: ${n} página(s).`);
+      } else {
+        status(`${n} página(s). Abrindo a impressão — escolha "Salvar como PDF".`);
+        imprimirRelatorio();
+      }
+    })
+  );
+}
+
+/* ---------- dados ---------- */
+
+async function dadosTempoIndividual(funcionarioId, itensTodos) {
+  const per = await Analise.periodo(TempoView.periodoTipo, TempoView.dataReferencia);
+  const r = refMesAno(per);
+  const itensFunc = itensTodos.filter((i) => i.funcionarioId === funcionarioId);
+  const iniPer = per.inicio != null ? per.inicio : itensFunc.length ? Math.min(...itensFunc.map((i) => i.dataFinal)) : Date.now();
+  const fimPer = per.fim != null ? per.fim : Date.now() + 1;
+  const [noPer, mes, ano, amostras, carga] = await Promise.all([
+    Tempo.projetosPorDia(funcionarioId, iniPer, fimPer, itensFunc),
+    Tempo.projetosPorDia(funcionarioId, r.mesIni, r.mesFim, itensFunc),
+    Tempo.projetosPorDia(funcionarioId, r.anoIni, r.anoFim, itensFunc),
+    Tempo.amostras(per.inicio, per.fim),
+    Tempo.cargaAtual(),
+  ]);
+  const a = amostras[funcionarioId] || { tipos: {}, cruz: {}, cats: {}, todos: [] };
+  const disponiveis = Tempo.TIPOS.filter((t) => a.tipos[t]);
+  const tipos = tiposEscolhidos(disponiveis);
+  const todosEscolhidos = tipos.flatMap((t) => a.tipos[t] || []);
+  const combos = Object.keys(a.cruz)
+    .filter((k) => tipos.includes(k.split('|')[0]))
+    .sort((x, y) => x.localeCompare(y, 'pt-BR'));
+  return { per, r, noPer, mes, ano, carga: carga[funcionarioId] || 0, a, disponiveis, tipos, todosEscolhidos, combos };
+}
+
+async function dadosTempoEquipe(funcionarios, itensTodos) {
+  const per = await Analise.periodo(TempoView.periodoTipo, TempoView.dataReferencia);
+  const r = refMesAno(per);
+  const [amostras, carga] = await Promise.all([Tempo.amostras(per.inicio, per.fim), Tempo.cargaAtual()]);
   const linhas = [];
   for (const f of funcionarios) {
     const itensFunc = itensTodos.filter((i) => i.funcionarioId === f.id);
-    const mes = await Tempo.projetosPorDia(f.id, r.mesIni, r.mesFim, itensFunc);
-    const ano = await Tempo.projetosPorDia(f.id, r.anoIni, r.anoFim, itensFunc);
-    linhas.push({ f, mes, ano, a: amostras[f.id] || { tipos: {}, cruz: {}, cats: {}, todos: [] } });
+    const iniPer = per.inicio != null ? per.inicio : itensFunc.length ? Math.min(...itensFunc.map((i) => i.dataFinal)) : Date.now();
+    const fimPer = per.fim != null ? per.fim : Date.now() + 1;
+    linhas.push({
+      f,
+      noPer: await Tempo.projetosPorDia(f.id, iniPer, fimPer, itensFunc),
+      mes: await Tempo.projetosPorDia(f.id, r.mesIni, r.mesFim, itensFunc),
+      ano: await Tempo.projetosPorDia(f.id, r.anoIni, r.anoFim, itensFunc),
+      carga: carga[f.id] || 0,
+      a: amostras[f.id] || { tipos: {}, cruz: {}, cats: {}, todos: [] },
+    });
   }
-  const tipos = Tempo.TIPOS.filter((t) => linhas.some((l) => l.a.tipos[t]));
-  const cats = Array.from(new Set(linhas.flatMap((l) => Object.keys(l.a.cats)))).sort((x, y) => x.localeCompare(y, 'pt-BR'));
-  const porDia = (x) => (x.porDia == null ? '—' : x.porDia.toLocaleString('pt-BR', { maximumFractionDigits: 1 }));
-  const cel = (lista) => {
-    if (!lista || !lista.length) return '<span class="tempo-vazio">—</span>';
-    if (lista.length < MIN_AMOSTRAS) return `<span class="tempo-vazio">poucos (${lista.length})</span>`;
-    return `<b>${Tempo.curto(Tempo.mediana(lista))}</b> <small class="tempo-sub">(${lista.length})</small>`;
+  const disponiveis = Tempo.TIPOS.filter((t) => linhas.some((l) => l.a.tipos[t]));
+  const tipos = tiposEscolhidos(disponiveis);
+  // categorias só dos tipos escolhidos
+  const catsDe = (l) => {
+    const out = {};
+    Object.entries(l.a.cruz).forEach(([k, v]) => {
+      const [t, c] = k.split('|');
+      if (!tipos.includes(t)) return;
+      (out[c] = out[c] || []).push(...v);
+    });
+    return out;
   };
+  linhas.forEach((l) => {
+    l.catsFiltradas = catsDe(l);
+    l.todosEscolhidos = tipos.flatMap((t) => l.a.tipos[t] || []);
+  });
+  const cats = Array.from(new Set(linhas.flatMap((l) => Object.keys(l.catsFiltradas)))).sort((x, y) => x.localeCompare(y, 'pt-BR'));
+  return { per, r, linhas, disponiveis, tipos, cats };
+}
 
+/* ---------- HTML (tela e PDF usam o mesmo) ---------- */
+
+function htmlTempoIndividualPartes(d) {
+  const resumo = `
+    <div class="tempo-cards">
+      <div class="tempo-card"><div class="tempo-card__v">${porDiaTxt(d.noPer)}</div><div class="tempo-card__l">projetos/dia no período<br><small>${d.noPer.projetos} em ${d.noPer.dias} dia(s) úteis</small></div></div>
+      <div class="tempo-card"><div class="tempo-card__v">${porDiaTxt(d.mes)}</div><div class="tempo-card__l">projetos/dia · ${escapeHtml(d.r.rotMes)}<br><small>${d.mes.projetos} em ${d.mes.dias} dia(s)</small></div></div>
+      <div class="tempo-card"><div class="tempo-card__v">${porDiaTxt(d.ano)}</div><div class="tempo-card__l">projetos/dia · ${escapeHtml(d.r.rotAno)}<br><small>${d.ano.projetos} em ${d.ano.dias} dia(s)</small></div></div>
+      <div class="tempo-card"><div class="tempo-card__v">${d.carga}</div><div class="tempo-card__l">em andamento agora</div></div>
+      <div class="tempo-card"><div class="tempo-card__v">${d.todosEscolhidos.length >= MIN_AMOSTRAS ? Tempo.curto(Tempo.mediana(d.todosEscolhidos)) : '—'}</div><div class="tempo-card__l">tempo típico por serviço<br><small>${d.todosEscolhidos.length} medido(s)</small></div></div>
+    </div>`;
+  const porTipo = d.tipos.length
+    ? `<table class="tabela tempo-tabela">
+        <thead><tr><th>Tipo de móvel</th><th>Tempo típico (mediana)</th></tr></thead>
+        <tbody>${d.tipos.map((t) => `<tr><td>${escapeHtml(t)}</td><td>${celulaMediana(d.a.tipos[t])}</td></tr>`).join('')}</tbody>
+      </table>`
+    : '<div class="row__meta">Nenhum serviço com tempo medido nesse período e nesses tipos.</div>';
+  const cruz = d.combos.length
+    ? `<table class="tabela tempo-tabela">
+        <thead><tr><th>Tipo de móvel</th><th>Categoria</th><th>Tempo típico (mediana)</th></tr></thead>
+        <tbody>${d.combos
+          .map((k) => {
+            const [t, c] = k.split('|');
+            return `<tr><td>${escapeHtml(t)}</td><td>${escapeHtml(c)}</td><td>${celulaMediana(d.a.cruz[k])}</td></tr>`;
+          })
+          .join('')}</tbody>
+      </table>`
+    : '';
+  return { resumo, porTipo, cruz };
+}
+
+function htmlTempoEquipePartes(d) {
+  const nomes = d.linhas.map((l) => `<th class="num">${escapeHtml(primeiroNome(l.f.nome))}</th>`).join('');
+  const resumo = `<table class="tabela tempo-tabela">
+      <thead><tr><th>Funcionário</th><th class="num">Proj./dia no período</th><th class="num">Proj./dia · ${escapeHtml(d.r.rotMes)}</th><th class="num">Proj./dia · ${escapeHtml(d.r.rotAno)}</th><th class="num">Em andamento</th><th class="num">Tempo típico</th></tr></thead>
+      <tbody>${d.linhas
+        .map(
+          (l) => `<tr><td>${escapeHtml(l.f.nome)}</td><td class="num">${porDiaTxt(l.noPer)}</td><td class="num">${porDiaTxt(l.mes)}</td><td class="num">${porDiaTxt(l.ano)}</td><td class="num">${l.carga}</td><td class="num">${celulaCurta(l.todosEscolhidos)}</td></tr>`
+        )
+        .join('')}</tbody>
+    </table>`;
+  const porTipo = d.tipos.length
+    ? `<table class="tabela tempo-tabela">
+        <thead><tr><th>Tipo de móvel</th>${nomes}</tr></thead>
+        <tbody>${d.tipos.map((t) => `<tr><td>${escapeHtml(t)}</td>${d.linhas.map((l) => `<td class="num">${celulaCurta(l.a.tipos[t])}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>`
+    : '<div class="row__meta">Nenhum serviço com tempo medido nesse período e nesses tipos.</div>';
+  // gráfico: minutos típicos por tipo, uma barra por pessoa (só com 3+ medidos)
+  const tiposGraf = d.tipos.filter((t) => d.linhas.some((l) => (l.a.tipos[t] || []).length >= MIN_AMOSTRAS));
+  const grafico = tiposGraf.length
+    ? barrasAgrupadasSVG(
+        tiposGraf,
+        d.linhas.map((l, i) => ({
+          nome: primeiroNome(l.f.nome),
+          cor: corDaSerie(i),
+          valores: tiposGraf.map((t) => {
+            const lista = l.a.tipos[t] || [];
+            return lista.length >= MIN_AMOSTRAS ? Math.round(Tempo.mediana(lista) / 60) : 0;
+          }),
+        })),
+        { altura: 220 }
+      )
+    : '';
+  const porCat = d.cats.length
+    ? `<table class="tabela tempo-tabela">
+        <thead><tr><th>Categoria</th>${nomes}</tr></thead>
+        <tbody>${d.cats.map((c) => `<tr><td>${escapeHtml(c)}</td>${d.linhas.map((l) => `<td class="num">${celulaCurta(l.catsFiltradas[c])}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>`
+    : '';
+  return { resumo, porTipo, grafico, porCat };
+}
+
+function rotuloTipos(d) {
+  return TempoView.tipos.length ? d.tipos.join(', ') || TempoView.tipos.join(', ') : 'todos os tipos de móvel';
+}
+
+/* ---------- telas ---------- */
+
+async function renderRaioXTempo(el, funcionarioId, periodo, itensTodos) {
+  RaioXView._tempoCtx = { modo: 'individual', funcionarioId, itensTodos };
+  el.innerHTML = `<div class="card" style="margin-top:16px"><div class="wip">${ICONS.wip}<b>Calculando tempos…</b></div></div>`;
+  const d = await dadosTempoIndividual(funcionarioId, itensTodos);
+  const p = htmlTempoIndividualPartes(d);
+  el.innerHTML = `
+    <div class="card" style="margin-top:16px">
+      <h3 class="section-title" style="font-size:16px">Produtividade e tempo gasto <span class="badge badge--brand">só Admin</span></h3>
+      <p class="section-sub">Escolha o período e os tipos de móvel que quer ver</p>
+      ${await controlesTempoHtml(d.disponiveis)}
+      ${p.resumo}
+      <h4 class="rx-subtitulo">Tempo por tipo de móvel · ${escapeHtml(d.per.rotulo)}</h4>
+      <div class="tabela-wrap">${p.porTipo}</div>
+      ${p.cruz ? `<h4 class="rx-subtitulo">Tipo de móvel × categoria</h4><div class="tabela-wrap">${p.cruz}</div>` : ''}
+      <div class="row__meta" style="margin-top:10px">⏱ ${escapeHtml(NOTA_TEMPO)}</div>
+      ${botoesPdfTempo('PDF só do tempo desta pessoa')}
+    </div>`;
+  ligarControlesTempo(el, () => renderRaioXTempo(el, funcionarioId, periodo, itensTodos));
+  ligarPdfTempo(el, () => montarPdfTempoIndividual(funcionarioId, itensTodos));
+}
+
+async function renderRaioXTempoEquipe(el, funcionarios, periodo, itensTodos) {
+  RaioXView._tempoCtx = { modo: 'equipe', funcionarios, itensTodos };
+  el.innerHTML = `<div class="card" style="margin-top:16px"><div class="wip">${ICONS.wip}<b>Calculando tempos…</b></div></div>`;
+  const d = await dadosTempoEquipe(funcionarios, itensTodos);
+  const p = htmlTempoEquipePartes(d);
   el.innerHTML = `
     <div class="card" style="margin-top:16px">
       <h3 class="section-title" style="font-size:16px">Produtividade e tempo gasto — equipe</h3>
-      <p class="section-sub">Pra decidir qual serviço passar pra cada um</p>
-      <div class="tabela-wrap"><table class="tabela">
-        <thead><tr><th>Funcionário</th><th class="num">Projetos/dia · ${escapeHtml(r.rotMes)}</th><th class="num">Projetos/dia · ${escapeHtml(r.rotAno)}</th><th class="num">Em andamento agora</th><th class="num">Tempo típico</th></tr></thead>
-        <tbody>${linhas
-          .map(
-            (l) => `<tr><td>${escapeHtml(l.f.nome)}</td><td class="num">${porDia(l.mes)}</td><td class="num">${porDia(l.ano)}</td><td class="num">${carga[l.f.id] || 0}</td><td class="num">${cel(l.a.todos)}</td></tr>`
-          )
-          .join('')}</tbody>
-      </table></div>
-
-      <h4 class="rx-subtitulo">Tempo típico por tipo de móvel · ${escapeHtml(periodo.rotulo)}</h4>
-      ${
-        tipos.length
-          ? `<div class="tabela-wrap"><table class="tabela">
-              <thead><tr><th>Tipo de móvel</th>${linhas.map((l) => `<th class="num">${escapeHtml(primeiroNome(l.f.nome))}</th>`).join('')}</tr></thead>
-              <tbody>${tipos.map((t) => `<tr><td>${escapeHtml(t)}</td>${linhas.map((l) => `<td class="num">${cel(l.a.tipos[t])}</td>`).join('')}</tr>`).join('')}</tbody>
-            </table></div>`
-          : '<div class="row__meta">Nenhum serviço com tempo medido nesse período ainda.</div>'
-      }
-
-      ${
-        cats.length
-          ? `<h4 class="rx-subtitulo">Tempo típico por categoria</h4>
-            <div class="tabela-wrap"><table class="tabela">
-              <thead><tr><th>Categoria</th>${linhas.map((l) => `<th class="num">${escapeHtml(primeiroNome(l.f.nome))}</th>`).join('')}</tr></thead>
-              <tbody>${cats.map((c) => `<tr><td>${escapeHtml(c)}</td>${linhas.map((l) => `<td class="num">${cel(l.a.cats[c])}</td>`).join('')}</tr>`).join('')}</tbody>
-            </table></div>`
-          : ''
-      }
-      <div class="row__meta" style="margin-top:10px">⏱ Mediana do tempo em horário útil (7h–17h, dias úteis, sem almoço); o número entre parênteses é quantos serviços foram medidos. Mostra a partir de ${MIN_AMOSTRAS}.</div>
+      <p class="section-sub">Pra decidir qual serviço passar pra cada um · escolha o período e os tipos de móvel</p>
+      ${await controlesTempoHtml(d.disponiveis)}
+      <div class="tabela-wrap">${p.resumo}</div>
+      <h4 class="rx-subtitulo">Tempo típico por tipo de móvel · ${escapeHtml(d.per.rotulo)}</h4>
+      <div class="tabela-wrap">${p.porTipo}</div>
+      ${p.grafico ? `<h4 class="rx-subtitulo">Comparação (minutos, tempo típico)</h4>${p.grafico}` : ''}
+      ${p.porCat ? `<h4 class="rx-subtitulo">Tempo típico por categoria (dos tipos escolhidos)</h4><div class="tabela-wrap">${p.porCat}</div>` : ''}
+      <div class="row__meta" style="margin-top:10px">⏱ ${escapeHtml(NOTA_TEMPO)}</div>
+      ${botoesPdfTempo('PDF comparativo de tempo da equipe')}
     </div>`;
+  ligarControlesTempo(el, () => renderRaioXTempoEquipe(el, funcionarios, periodo, itensTodos));
+  ligarPdfTempo(el, () => montarPdfTempoEquipe(funcionarios, itensTodos));
+}
+
+/* ---------- PDFs ---------- */
+
+async function blocosTempoIndividual(funcionarioId, itensTodos, comTitulo = true) {
+  const d = await dadosTempoIndividual(funcionarioId, itensTodos);
+  const p = htmlTempoIndividualPartes(d);
+  const blocos = [];
+  if (comTitulo) blocos.push({ tipo: 'titulo', html: `<h2 class="rp-secao">Produtividade e tempo gasto</h2><p class="rp-nota">${escapeHtml(d.per.rotulo)} · ${escapeHtml(rotuloTipos(d))}</p>` });
+  blocos.push({ tipo: 'html', html: `<div class="rp-tempo">${p.resumo}</div>` });
+  blocos.push({ tipo: 'titulo', html: '<h2 class="rp-secao">Tempo por tipo de móvel</h2>' });
+  blocos.push({ tipo: 'html', html: `<div class="rp-tempo">${p.porTipo}</div>` });
+  if (p.cruz) {
+    blocos.push({ tipo: 'titulo', html: '<h2 class="rp-secao">Tipo de móvel × categoria</h2>' });
+    blocos.push({ tipo: 'html', html: `<div class="rp-tempo">${p.cruz}</div>` });
+  }
+  blocos.push({ tipo: 'html', html: `<p class="rp-nota">${escapeHtml(NOTA_TEMPO)}</p>` });
+  return { blocos, d };
+}
+
+async function blocosTempoEquipe(funcionarios, itensTodos, comTitulo = true) {
+  const d = await dadosTempoEquipe(funcionarios, itensTodos);
+  const p = htmlTempoEquipePartes(d);
+  const blocos = [];
+  if (comTitulo) blocos.push({ tipo: 'titulo', html: `<h2 class="rp-secao">Produtividade e tempo gasto — equipe</h2><p class="rp-nota">${escapeHtml(d.per.rotulo)} · ${escapeHtml(rotuloTipos(d))}</p>` });
+  blocos.push({ tipo: 'html', html: `<div class="rp-tempo">${p.resumo}</div>` });
+  blocos.push({ tipo: 'titulo', html: '<h2 class="rp-secao">Tempo típico por tipo de móvel</h2>' });
+  blocos.push({ tipo: 'html', html: `<div class="rp-tempo">${p.porTipo}</div>` });
+  if (p.grafico) blocos.push({ tipo: 'html', html: `<div class="rp-grafico"><div class="rp-grafico__titulo">Comparação (minutos, tempo típico)</div>${p.grafico}</div>` });
+  if (p.porCat) {
+    blocos.push({ tipo: 'titulo', html: '<h2 class="rp-secao">Tempo típico por categoria</h2>' });
+    blocos.push({ tipo: 'html', html: `<div class="rp-tempo">${p.porCat}</div>` });
+  }
+  blocos.push({ tipo: 'html', html: `<p class="rp-nota">${escapeHtml(NOTA_TEMPO)}</p>` });
+  return { blocos, d };
+}
+
+async function montarPdfTempoIndividual(funcionarioId, itensTodos) {
+  const u = await DB.get('usuarios', funcionarioId);
+  const { blocos, d } = await blocosTempoIndividual(funcionarioId, itensTodos);
+  return montarPdfPadrao(blocos, {
+    titulo: `Tempo gasto — ${u ? u.nome : ''}`,
+    periodo: d.per.rotulo,
+    detalhes: rotuloTipos(d),
+  });
+}
+
+async function montarPdfTempoEquipe(funcionarios, itensTodos) {
+  const { blocos, d } = await blocosTempoEquipe(funcionarios, itensTodos);
+  return montarPdfPadrao(blocos, {
+    titulo: 'Tempo gasto — comparativo da equipe',
+    periodo: d.per.rotulo,
+    detalhes: rotuloTipos(d),
+  });
 }
 
 window.Tempo = Tempo;
