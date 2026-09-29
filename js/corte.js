@@ -75,6 +75,8 @@ async function atualizarListaCorte(view) {
   const statusCorte = (p) => (STATUS_CORTE.includes(p.status) ? p.status : 'Aguardando');
   const contaCorte = { todos: baseCorte.length, Aguardando: 0, 'Em andamento': 0, 'Concluído': 0 };
   baseCorte.forEach((p) => contaCorte[statusCorte(p)]++);
+  contaCorte.pendentes = baseCorte.filter((p) => p.aprovado === 'pendente').length;
+  if (CorteView.filtroStatus === 'pendentes' && !Auth.isAdmin()) CorteView.filtroStatus = 'todos';
   if (!CorteView.filtroStatus) CorteView.filtroStatus = 'todos';
   const filtrosEl = document.getElementById('filtros-corte');
   if (filtrosEl) {
@@ -85,7 +87,11 @@ async function atualizarListaCorte(view) {
       ['Aguardando', 'Aguardando'],
     ]
       .map(([v, l]) => `<button class="chip ${CorteView.filtroStatus === v ? 'chip--on' : ''}" data-filtro-corte="${v}">${l} <small>${contaCorte[v]}</small></button>`)
-      .join('')}</div>`;
+      .join('')}${
+      Auth.isAdmin()
+        ? `<button class="chip chip--pendente ${CorteView.filtroStatus === 'pendentes' ? 'chip--on' : ''}" data-filtro-corte="pendentes">⚑ A aprovar <small>${contaCorte.pendentes}</small></button>`
+        : ''
+    }</div>`;
     filtrosEl.querySelectorAll('[data-filtro-corte]').forEach((b) =>
       b.addEventListener('click', () => {
         CorteView.filtroStatus = b.dataset.filtroCorte;
@@ -94,7 +100,9 @@ async function atualizarListaCorte(view) {
     );
   }
   const filtrados = baseCorte
-    .filter((p) => CorteView.filtroStatus === 'todos' || statusCorte(p) === CorteView.filtroStatus)
+    .filter((p) =>
+      CorteView.filtroStatus === 'todos' ? true : CorteView.filtroStatus === 'pendentes' ? p.aprovado === 'pendente' : statusCorte(p) === CorteView.filtroStatus
+    )
     .sort((a, b) => {
       // pendente de aprovação sempre no topo, pro Admin achar rápido
       const pendA = a.aprovado !== 'aprovado' ? 0 : 1;

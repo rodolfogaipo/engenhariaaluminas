@@ -256,8 +256,11 @@ async function renderAtelie(view) {
   const pedidos = itens.filter((s) => s.atelieSolicitacao).length;
 
   const alvo = Analise.normaliza(st.filtroTexto);
+  if (st.filtro === 'pedidos' && !ehAdmin) st.filtro = 'esperando';
   const filtrados = itens.filter((s) => {
-    if (st.filtro !== 'todos' && s._situacao !== st.filtro) return false;
+    if (st.filtro === 'pedidos') {
+      if (!s.atelieSolicitacao) return false;
+    } else if (st.filtro !== 'todos' && s._situacao !== st.filtro) return false;
     if (!alvo) return true;
     return (
       Analise.normaliza(s.nome).includes(alvo) ||
@@ -307,6 +310,7 @@ async function renderAtelie(view) {
       ]
         .map(([v, l]) => `<button class="chip ${st.filtro === v ? 'chip--on' : ''}" data-atelie-filtro="${v}">${l} <small>${conta[v]}</small></button>`)
         .join('')}
+      ${ehAdmin ? `<button class="chip chip--pendente ${st.filtro === 'pedidos' ? 'chip--on' : ''}" data-atelie-filtro="pedidos">⚑ A autorizar <small>${pedidos}</small></button>` : ''}
     </div>
     <div class="chips" style="margin-bottom:12px">
       <button class="chip ${!st.porMovel ? 'chip--on' : ''}" data-atelie-modo="pecas">Ver por peça</button>

@@ -175,8 +175,12 @@ async function atualizarListaServicos(view) {
     });
 
   // situação (a contagem já respeita a busca e a categoria)
-  const contaEst = { todos: baseFiltro.length, concluido: 0, em_andamento: 0, disponivel: 0 };
+  const contaEst = { todos: baseFiltro.length, concluido: 0, em_andamento: 0, disponivel: 0, pendentes: 0 };
   baseFiltro.forEach((s) => contaEst[estadoServico(s)]++);
+  // só Admin: o que depende dele — lançamento a aprovar ou conclusão a validar
+  const aprovarOuValidar = (s) => s.aprovado === 'pendente' || (!s.dataFinal && !!s.concluidoInformadoEm);
+  contaEst.pendentes = baseFiltro.filter(aprovarOuValidar).length;
+  if (fv.filtroEstado === 'pendentes' && !Auth.isAdmin()) fv.filtroEstado = 'todos';
   const filtrosEl = document.getElementById('filtros-servicos');
   if (filtrosEl) {
     filtrosEl.innerHTML = `
@@ -188,7 +192,11 @@ async function atualizarListaServicos(view) {
           ['disponivel', 'Não iniciados'],
         ]
           .map(([v, l]) => `<button class="chip ${fv.filtroEstado === v ? 'chip--on' : ''}" data-filtro-estado="${v}">${l} <small>${contaEst[v]}</small></button>`)
-          .join('')}</div>
+          .join('')}${
+          Auth.isAdmin()
+            ? `<button class="chip chip--pendente ${fv.filtroEstado === 'pendentes' ? 'chip--on' : ''}" data-filtro-estado="pendentes">⚑ A aprovar / validar <small>${contaEst.pendentes}</small></button>`
+            : ''
+        }</div>
         <div class="field filtros-cat">
           <select id="filtro-categoria-servico" aria-label="Categoria">
             <option value="" ${!fv.filtroCategoria ? 'selected' : ''}>Todas as categorias</option>
@@ -212,7 +220,9 @@ async function atualizarListaServicos(view) {
   }
 
   const filtrados = baseFiltro
-    .filter((s) => fv.filtroEstado === 'todos' || estadoServico(s) === fv.filtroEstado)
+    .filter((s) =>
+      fv.filtroEstado === 'todos' ? true : fv.filtroEstado === 'pendentes' ? aprovarOuValidar(s) : estadoServico(s) === fv.filtroEstado
+    )
     .sort((a, b) => {
       const prioridadeDe = (s) => {
         if (s.aprovado !== 'aprovado') return -1; // pendente de aprovação sempre no topo, pro Admin achar rápido

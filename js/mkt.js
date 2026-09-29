@@ -12,6 +12,7 @@ const MktView = {
   modoSelecao: false, // marcar produtos pra gerar a ficha em PDF
   selecionados: new Set(),
   ordem: 'recentes', // 'recentes' | 'antigos' | 'az' | 'linha'
+  soPendentes: false, // só Admin: só os que esperam aprovação
 };
 
 /* Linha de produto: o nome sem o tipo de móvel, sem medidas e sem
@@ -101,6 +102,7 @@ async function renderMktLista(view) {
       ]
         .map(([v, l]) => `<button class="chip ${MktView.ordem === v ? 'chip--on' : ''}" data-ordem-mkt="${v}">${l}</button>`)
         .join('')}
+      <span id="filtro-pendente-mkt"></span>
     </div>
 
     <div id="barra-mkt"></div>
@@ -153,6 +155,7 @@ async function atualizarListaMkt(view) {
   const filtrados = todos
     .filter((p) => !somenteAprovados || p.aprovado === 'aprovado')
     .filter((p) => !filtro || (p.nome || '').toLowerCase().includes(filtro) || linhaDoProdutoMkt(p.nome).toLowerCase().includes(filtro))
+    .filter((p) => !(MktView.soPendentes && Auth.isAdmin()) || p.aprovado === 'pendente')
     .sort((a, b) => {
       const porNome = (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { numeric: true });
       if (MktView.ordem === 'az') return porNome;
@@ -164,6 +167,16 @@ async function atualizarListaMkt(view) {
 
   const listaEl = document.getElementById('lista-mkt');
   if (!listaEl) return;
+
+  const chipPend = document.getElementById('filtro-pendente-mkt');
+  if (chipPend && Auth.isAdmin()) {
+    const nPend = todos.filter((p) => p.aprovado === 'pendente').length;
+    chipPend.innerHTML = `<button class="chip chip--pendente ${MktView.soPendentes ? 'chip--on' : ''}" id="btn-pendente-mkt">⚑ A aprovar <small>${nPend}</small></button>`;
+    document.getElementById('btn-pendente-mkt').addEventListener('click', () => {
+      MktView.soPendentes = !MktView.soPendentes;
+      atualizarListaMkt(view);
+    });
+  }
 
   MktView._visiveis = filtrados;
   renderBarraSelecaoMkt(view, todos);

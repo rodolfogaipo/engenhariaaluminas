@@ -908,3 +908,7 @@ a { color: var(--brand-700); }
 .linha-produto { font-family: var(--font-display); font-weight: 700; font-size: 15px; color: var(--brand-800); margin: 18px 0 8px; padding-left: 10px; border-left: 3px solid var(--brand-700); }
 .linha-produto:first-child { margin-top: 0; }
 .linha-produto small { font-family: var(--font-body); font-weight: 500; font-size: 12px; color: var(--ink-faint); margin-left: 6px; }
+
+/* filtro "A aprovar / validar" (só Admin) */
+.chip--pendente { background: var(--warn-bg); color: var(--warn-fg); border: 1px solid var(--warn-fg); }
+.chip--pendente.chip--on { background: var(--warn-fg); color: #fff; }

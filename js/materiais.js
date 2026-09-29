@@ -11,6 +11,7 @@ const MateriaisView = {
   subView: 'lista', // 'lista' | 'form'
   filtroTexto: '',
   filtroTipo: '',
+  soPendentes: false, // só Admin
   formState: null,
   modoSelecao: false, // "Selecionar para PDF"
   selecionados: new Set(),
@@ -167,6 +168,11 @@ async function renderMateriaisLista(view) {
     </div>
     <div class="chips" style="margin-bottom:18px">
       <button class="chip ${!MateriaisView.filtroTipo ? 'chip--on' : ''}" data-filtro-tipo="">Todos</button>
+      ${
+        Auth.isAdmin()
+          ? `<button class="chip chip--pendente ${MateriaisView.soPendentes ? 'chip--on' : ''}" id="btn-pendente-mat">⚑ A aprovar <small id="conta-pendente-mat">…</small></button>`
+          : ''
+      }
       ${Materiais.nomesCategorias().map(
         (t) => `<button class="chip ${MateriaisView.filtroTipo === t ? 'chip--on' : ''}" data-filtro-tipo="${escapeHtml(t)}">${escapeHtml(t)}</button>`
       ).join('')}
@@ -214,6 +220,13 @@ async function renderMateriaisLista(view) {
     MateriaisView.filtroTexto = busca.value;
     atualizarListaMateriais(view);
   });
+  const btnPendMat = document.getElementById('btn-pendente-mat');
+  if (btnPendMat) {
+    btnPendMat.addEventListener('click', () => {
+      MateriaisView.soPendentes = !MateriaisView.soPendentes;
+      renderMateriaisLista(view);
+    });
+  }
   view.querySelectorAll('[data-filtro-tipo]').forEach((btn) => {
     btn.addEventListener('click', () => {
       MateriaisView.filtroTipo = btn.dataset.filtroTipo;
@@ -234,7 +247,11 @@ async function atualizarListaMateriais(view) {
   });
 
   const filtro = normalizaBuscaMaterial(MateriaisView.filtroTexto);
+  const catsPendentes = (await DB.getAll('categorias_material')).filter((c) => c.aprovado === 'pendente').length;
+  const contaPend = document.getElementById('conta-pendente-mat');
+  if (contaPend) contaPend.textContent = todos.filter((m) => Materiais.ehPendente(m)).length + catsPendentes;
   const filtrados = todos.filter((m) => {
+    if (MateriaisView.soPendentes && Auth.isAdmin() && !Materiais.ehPendente(m)) return false;
     if (MateriaisView.filtroTipo && m.tipo !== MateriaisView.filtroTipo) return false;
     if (!filtro) return true;
     return normalizaBuscaMaterial(m.nome).includes(filtro) || normalizaBuscaMaterial(m.observacao).includes(filtro);
@@ -242,6 +259,10 @@ async function atualizarListaMateriais(view) {
 
   const listaEl = document.getElementById('lista-materiais');
   if (!listaEl) return;
+  const avisoCats =
+    MateriaisView.soPendentes && Auth.isAdmin() && catsPendentes
+      ? `<div class="card" style="background:var(--warn-bg); border-color:var(--warn-fg); padding:10px 14px; margin-bottom:12px">Tem também <b>${catsPendentes} categoria(s)</b> esperando aprovação — toque em <b>Categorias</b> pra aprovar.</div>`
+      : '';
 
   MateriaisView._visiveis = filtrados.map((m) => m.id);
   renderBarraSelecaoPdf({
@@ -257,10 +278,10 @@ async function atualizarListaMateriais(view) {
   });
 
   if (filtrados.length === 0) {
-    listaEl.innerHTML = `
+    listaEl.innerHTML = `${avisoCats}
       <div class="card">
         <div class="empty">
-          <div class="empty__title">${todos.length === 0 ? 'Nenhum material cadastrado ainda' : 'Nenhum material encontrado'}</div>
+          <div class="empty__title">${todos.length === 0 ? 'Nenhum material cadastrado ainda' : MateriaisView.soPendentes ? 'Nenhum material esperando aprovação' : 'Nenhum material encontrado'}</div>
           <div class="empty__sub">${
             todos.length === 0
               ? ehAdmin
@@ -273,7 +294,7 @@ async function atualizarListaMateriais(view) {
     return;
   }
 
-  listaEl.innerHTML = `
+  listaEl.innerHTML = `${avisoCats}
     <div class="card" style="padding:0">
       ${filtrados
         .map(
