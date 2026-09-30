@@ -82,8 +82,16 @@ const Destaque = {
       const semMeta = await Metrics.calcularSemanaPorIndice(eventos, per.idxMeta, pesos, ferias);
       const metaProx = await Metrics.calcularMetaPorIndice(eventos, per.idxMeta, pesos, ferias);
 
+      // férias que caem dentro do período (pra justificar na folha)
+      const feriasNoPeriodo = ferias
+        .filter((f) => f.dataInicio < per.fim && f.dataFim >= per.inicio)
+        .sort((a, b) => a.dataInicio - b.dataInicio)
+        .map((f) => ({ inicio: f.dataInicio, fim: f.dataFim }));
+
       linhas.push({
         u,
+        feriasNoPeriodo,
+        semanasFerias,
         emFerias: contadas === 0 && semanasFerias > 0,
         semDados: contadas === 0 && semanasFerias === 0,
         pct: contadas ? somaPct / contadas : 0,
@@ -200,6 +208,20 @@ async function renderCartaoDestaque(cont) {
 
 /* ---------------- A FOLHA ---------------- */
 
+// "🏖️ Férias de 07/09 a 18/09" (pode ter mais de um período)
+function textoFerias(l) {
+  if (!l.feriasNoPeriodo || !l.feriasNoPeriodo.length) return '';
+  const trechos = l.feriasNoPeriodo.map((f) => `${formatarDataCurta(f.inicio).slice(0, 5)} a ${formatarDataCurta(f.fim).slice(0, 5)}`);
+  return `🏖️ Férias de ${trechos.join(' e de ')}`;
+}
+
+function seloFerias(l, completo) {
+  const t = textoFerias(l);
+  if (!t) return '';
+  const semanas = l.semanasFerias ? ` · ${l.semanasFerias} semana${l.semanasFerias === 1 ? '' : 's'} fora da meta` : '';
+  return `<span class="dq-ferias">${t}${completo ? semanas : ''}</span>`;
+}
+
 function pctTexto(v) {
   return `${Math.round((v || 0) * 100)}%`;
 }
@@ -230,6 +252,7 @@ async function montarPdfDestaque(tipo, ref) {
           <div class="dq-hero__nome">${escapeHtml(destaque.u.nome)}</div>
           <div class="dq-hero__pct">${pctTexto(destaque.pct)} <span>da meta</span></div>
           <div class="dq-hero__sub">${numProjetos(destaque.feitos)} projeto(s) feito(s) · meta de ${numProjetos(destaque.meta)}</div>
+          ${textoFerias(destaque) ? `<div class="dq-hero__sub">${seloFerias(destaque, true)}</div>` : ''}
         </div>`
       : `<div class="dq-hero"><div class="dq-hero__faixa">Funcionário Destaque ${nomes[tipo]}</div><div class="dq-hero__periodo">${escapeHtml(per.rotulo)}</div><div class="dq-hero__sub" style="margin-top:8mm">Sem entregas nesse período.</div></div>`,
   });
@@ -246,13 +269,13 @@ async function montarPdfDestaque(tipo, ref) {
           (l, i) => `<div class="dq-rank__linha ${i === 0 && destaque ? 'dq-rank__linha--1' : ''}">
             <span class="dq-rank__pos">${medalha[i] || `${i + 1}º`}</span>
             ${fotoDestaque(l.u, 9)}
-            <span class="dq-rank__nome">${escapeHtml(l.u.nome)}</span>
+            <span class="dq-rank__nome">${escapeHtml(l.u.nome)}${seloFerias(l, false)}</span>
             <span class="dq-rank__barra"><i style="width:${Math.min(100, Math.round(l.pct * 100 / Math.max(1, ranking[0].pct)))}%"></i></span>
             <span class="dq-rank__pct">${pctTexto(l.pct)}</span>
           </div>`
         )
         .join('')}
-      ${deFerias.map((l) => `<div class="dq-rank__linha dq-rank__linha--ferias"><span class="dq-rank__pos">—</span>${fotoDestaque(l.u, 9)}<span class="dq-rank__nome">${escapeHtml(l.u.nome)}</span><span class="dq-rank__pct">Férias</span></div>`).join('')}
+      ${deFerias.map((l) => `<div class="dq-rank__linha dq-rank__linha--ferias"><span class="dq-rank__pos">—</span>${fotoDestaque(l.u, 9)}<span class="dq-rank__nome">${escapeHtml(l.u.nome)}${seloFerias(l, false)}</span><span class="dq-rank__barra dq-rank__barra--vazia"></span><span class="dq-rank__pct">Férias</span></div>`).join('')}
     </div>`,
   });
 
@@ -271,11 +294,18 @@ async function montarPdfDestaque(tipo, ref) {
     cabecalho: '<tr><th>Funcionário</th><th class="num">Meta de projetos</th><th class="num">Projetos feitos</th><th class="num">% da meta</th></tr>',
     linhas: alfabetica.map((l) =>
       l.emFerias
-        ? `<tr><td>${escapeHtml(l.u.nome)}</td><td class="num" colspan="3">Férias</td></tr>`
-        : `<tr><td>${escapeHtml(l.u.nome)}</td><td class="num">${numProjetos(l.meta)}</td><td class="num"><b>${numProjetos(l.feitos)}</b></td><td class="num">${pctTexto(l.pct)}</td></tr>`
+        ? `<tr><td>${escapeHtml(l.u.nome)}<div>${seloFerias(l, false)}</div></td><td class="num" colspan="3">Férias o período todo</td></tr>`
+        : `<tr><td>${escapeHtml(l.u.nome)}${textoFerias(l) ? `<div>${seloFerias(l, true)}</div>` : ''}</td><td class="num">${numProjetos(l.meta)}</td><td class="num"><b>${numProjetos(l.feitos)}</b></td><td class="num">${pctTexto(l.pct)}</td></tr>`
     ),
     classe: 'dq-tabela',
   });
+
+  if (linhas.some((l) => textoFerias(l))) {
+    blocos.push({
+      tipo: 'html',
+      html: '<p class="rp-nota">🏖️ Semanas de férias não entram na % da meta nem na meta de projetos — a média considera só as semanas trabalhadas.</p>',
+    });
+  }
 
   // 4) meta da semana atual — só no Destaque da Semana
   if (tipo === 'semana') {

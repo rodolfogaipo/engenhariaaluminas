@@ -912,3 +912,10 @@ a { color: var(--brand-700); }
 /* filtro "A aprovar / validar" (só Admin) */
 .chip--pendente { background: var(--warn-bg); color: var(--warn-fg); border: 1px solid var(--warn-fg); }
 .chip--pendente.chip--on { background: var(--warn-fg); color: #fff; }
+
+/* Quadro de Destaque — aviso de férias */
+.dq-ferias { display: inline-block; font-family: var(--font-body); font-size: 7.5pt; font-weight: 600; color: var(--warn-fg); background: var(--warn-bg); border-radius: 1.5mm; padding: 0.3mm 1.8mm; margin-left: 2mm; vertical-align: middle; }
+td .dq-ferias, .dq-hero__sub .dq-ferias { margin-left: 0; margin-top: 0.6mm; }
+.dq-hero__sub .dq-ferias { font-size: 9pt; padding: 0.8mm 3mm; }
+.dq-rank__barra--vazia { background: transparent; }
+.dq-rank__linha--ferias .dq-rank__pct { font-size: 10pt; color: var(--ink-soft); }
