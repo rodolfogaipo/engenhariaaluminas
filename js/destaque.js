@@ -89,7 +89,13 @@ const Destaque = {
         pct: contadas ? somaPct / contadas : 0,
         nota: contadas ? somaNota / contadas : 0,
         meta: somaMeta,
-        feitos,
+        // Mês/Ano: projetos feitos contam do dia 1 ao último dia (calendário),
+        // igual ao que o funcionário vê no Início. A % da meta continua pela
+        // regra oficial (média das semanas que começam no período).
+        feitos:
+          tipo === 'semana'
+            ? feitos
+            : eventos.filter((e) => e.dataFinal >= per.inicio && e.dataFinal < per.fim).length,
         metaProx: semMeta.emFerias ? null : Math.ceil(metaProx - 1e-9),
         feitosNaSemanaMeta: semMeta.projetos,
         feriasProx: !!semMeta.emFerias,
@@ -255,7 +261,9 @@ async function montarPdfDestaque(tipo, ref) {
   blocos.push({
     tipo: 'titulo',
     html: `<h2 class="rp-secao">Projetos ${nomes[tipo]}</h2>${
-      tipo === 'semana' ? '' : '<p class="rp-nota">Soma das semanas que começam no período.</p>'
+      tipo === 'semana'
+        ? ''
+        : `<p class="rp-nota">Projetos feitos: do dia 1 ao último dia ${tipo === 'mes' ? 'do mês' : 'do ano'} (igual ao que cada um vê no Início). Meta e % da meta: pelas semanas que começam no período (cálculo oficial, média semanal).</p>`
     }`,
   });
   blocos.push({
