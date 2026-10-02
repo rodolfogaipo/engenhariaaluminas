@@ -919,3 +919,10 @@ td .dq-ferias, .dq-hero__sub .dq-ferias { margin-left: 0; margin-top: 0.6mm; }
 .dq-hero__sub .dq-ferias { font-size: 9pt; padding: 0.8mm 3mm; }
 .dq-rank__barra--vazia { background: transparent; }
 .dq-rank__linha--ferias .dq-rank__pct { font-size: 10pt; color: var(--ink-soft); }
+
+/* limpar data + hora */
+.data-hora__limpar { flex: 0 0 auto; width: 40px; border-radius: var(--radius-m); background: var(--danger-bg); color: var(--danger-fg); font-size: 20px; font-weight: 700; line-height: 1; border: 1px solid transparent; }
+.data-hora__limpar:active { transform: scale(.95); }
+/* aviso rápido */
+#aviso-rapido { position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); transform: translate(-50%, 20px); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 13.5px; box-shadow: var(--shadow-pop); opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; z-index: 60; max-width: 90vw; text-align: center; }
+#aviso-rapido.aviso-rapido--on { opacity: 1; transform: translate(-50%, 0); }

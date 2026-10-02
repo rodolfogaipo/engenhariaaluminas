@@ -341,6 +341,7 @@ async function renderCorteForm(view) {
         <div class="data-hora">
           <input id="f-inicio-corte" type="date" value="${escapeHtml(st.dataInicioCorte)}" />
           <input id="f-hora-inicio-corte" type="time" value="${escapeHtml(st.horaInicioCorte || '')}" aria-label="Hora de início do corte" />
+          <button type="button" class="data-hora__limpar" data-limpar-data="f-inicio-corte" data-limpar-hora="f-hora-inicio-corte" aria-label="Limpar início do corte" title="Limpar data e hora">×</button>
         </div>
       </div>
 
@@ -349,6 +350,7 @@ async function renderCorteForm(view) {
         <div class="data-hora">
           <input id="f-fim-corte" type="date" value="${escapeHtml(st.dataFinalCorte)}" />
           <input id="f-hora-fim-corte" type="time" value="${escapeHtml(st.horaFinalCorte || '')}" aria-label="Hora final do corte" />
+          <button type="button" class="data-hora__limpar" data-limpar-data="f-fim-corte" data-limpar-hora="f-hora-fim-corte" aria-label="Limpar fim do corte" title="Limpar data e hora">×</button>
         </div>
         <div class="row__meta" style="margin-top:6px">Os botões "Iniciar corte" e "Finalizar corte" da lista já gravam a hora certinha. Aqui é pra corrigir.</div>
       </div>

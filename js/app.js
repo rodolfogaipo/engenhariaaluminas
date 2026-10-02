@@ -100,9 +100,39 @@ function renderLogin(root, errorMsg) {
 
 /* ---------- SHELL PRINCIPAL ---------- */
 
+// aviso pequeno no rodapé da tela, some sozinho
+function mostrarAvisoRapido(msg) {
+  let el = document.getElementById('aviso-rapido');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'aviso-rapido';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('aviso-rapido--on');
+  clearTimeout(mostrarAvisoRapido._t);
+  mostrarAvisoRapido._t = setTimeout(() => el.classList.remove('aviso-rapido--on'), 4500);
+}
+
+// botão "×" ao lado de data + hora: limpa os dois (o calendário do
+// celular só deixa limpar a hora)
+document.addEventListener('click', (ev) => {
+  const btn = ev.target && ev.target.closest ? ev.target.closest('[data-limpar-data]') : null;
+  if (!btn) return;
+  ev.preventDefault();
+  [btn.dataset.limparData, btn.dataset.limparHora].forEach((id) => {
+    const inp = id && document.getElementById(id);
+    if (!inp) return;
+    inp.value = '';
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+});
+
 function renderShell(root) {
   const user = Auth.current;
   garantirAbaPermitida();
+  if (Auth.isAdmin()) setTimeout(() => corrigirFusoPlanilhaSePreciso(), 1500);
   root.innerHTML = `
     <div id="app-shell">
       <header class="topbar">

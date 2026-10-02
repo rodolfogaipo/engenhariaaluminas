@@ -703,6 +703,7 @@ async function renderServicoForm(view) {
                 <div class="data-hora">
                   <input id="f-data-inicio-adm" type="date" value="${escapeHtml(st.dataInicioAdmin || '')}" />
                   <input id="f-hora-inicio-adm" type="time" value="${escapeHtml(st.horaInicioAdmin || '')}" aria-label="Hora de início" />
+                  <button type="button" class="data-hora__limpar" data-limpar-data="f-data-inicio-adm" data-limpar-hora="f-hora-inicio-adm" aria-label="Limpar hora de início" title="Limpar data e hora">×</button>
                 </div>
               </div>
               <div class="field" style="flex:1">
@@ -710,6 +711,7 @@ async function renderServicoForm(view) {
                 <div class="data-hora">
                   <input id="f-data-fim-adm" type="date" value="${escapeHtml(st.dataFinalAdmin || '')}" />
                   <input id="f-hora-fim-adm" type="time" value="${escapeHtml(st.horaFinalAdmin || '')}" aria-label="Hora final" />
+                  <button type="button" class="data-hora__limpar" data-limpar-data="f-data-fim-adm" data-limpar-hora="f-hora-fim-adm" aria-label="Limpar hora final" title="Limpar data e hora">×</button>
                 </div>
               </div>
             </div>

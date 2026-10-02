@@ -8,6 +8,58 @@
    o Administrador já existente, e escreve tudo em lote no IndexedDB.
    ========================================================= */
 
+/* As datas da planilha vêm como meia-noite no fuso de Londres (UTC).
+   No Brasil (-3h) isso virava 21:00 do DIA ANTERIOR — todas as datas
+   importadas apareciam (e contavam) um dia antes. Converte pra
+   meia-noite do horário local, no mesmo dia da planilha. */
+const DIA_MS = 24 * 60 * 60 * 1000;
+function dataPlanilhaParaLocal(v) {
+  if (typeof v !== 'number' || v % DIA_MS !== 0) return v;
+  const d = new Date(v);
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()).getTime();
+}
+const CAMPOS_DATA_SERVICO = ['dataFinal', 'iniciadoEm', 'dataProgramada', 'criadoEm', 'dataAprovacao', 'concluidoInformadoEm', 'validadoEm'];
+const CAMPOS_DATA_CORTE = ['dataChegada', 'dataProgramada', 'dataInicioCorte', 'dataFinalCorte', 'dataAprovacao', 'criadoEm'];
+
+function corrigirDatasDoRegistro(r, campos) {
+  let mudou = false;
+  campos.forEach((c) => {
+    const novo = dataPlanilhaParaLocal(r[c]);
+    if (novo !== r[c]) {
+      r[c] = novo;
+      mudou = true;
+    }
+  });
+  return mudou;
+}
+
+// roda uma vez só (Admin), nos registros que vieram da planilha
+async function corrigirFusoPlanilhaSePreciso() {
+  try {
+    const feito = await DB.get('config', 'migracao_fuso_planilha');
+    if (feito) return;
+    const [servicos, cortes] = await Promise.all([DB.getAll('servicos'), DB.getAll('plano_corte')]);
+    const sAlt = servicos.filter((r) => r.importadoDaPlanilha && corrigirDatasDoRegistro(r, CAMPOS_DATA_SERVICO));
+    const cAlt = cortes.filter((r) => r.importadoDaPlanilha && corrigirDatasDoRegistro(r, CAMPOS_DATA_CORTE));
+    if (sAlt.length || cAlt.length) {
+      mostrarAvisoRapido(`Corrigindo as datas que vieram da planilha (${sAlt.length + cAlt.length} registros)… é só uma vez.`);
+      window.operacaoEmAndamento = true;
+      if (sAlt.length) await DB.putMany('servicos', sAlt);
+      if (cAlt.length) await DB.putMany('plano_corte', cAlt);
+      window.operacaoEmAndamento = false;
+    }
+    await DB.put('config', { chave: 'migracao_fuso_planilha', valor: Date.now(), servicos: sAlt.length, cortes: cAlt.length });
+    if (sAlt.length || cAlt.length) {
+      if (typeof Tempo !== 'undefined') Tempo.limparCache();
+      mostrarAvisoRapido('Datas da planilha corrigidas ✓');
+      renderView(activeTab);
+    }
+  } catch (e) {
+    window.operacaoEmAndamento = false;
+    console.error('Correção das datas da planilha falhou (tenta de novo no próximo acesso):', e);
+  }
+}
+
 const SeedImport = {
   FUNCIONARIOS_ESPERADOS: ['Máyra', 'Marco Túlio', 'Leandrinho', 'Administrador'],
 
@@ -86,8 +138,8 @@ const SeedImport = {
         tipo: s.tipo,
         numeroPedido: s.numeroPedido || '',
         nome: s.nome,
-        dataProgramada: s.dataProgramada || null,
-        dataFinal: s.dataFinal || null,
+        dataProgramada: dataPlanilhaParaLocal(s.dataProgramada) || null,
+        dataFinal: dataPlanilhaParaLocal(s.dataFinal) || null,
         observacoes: s.observacoes || '',
         percentualAproveitamento: s.percentualAproveitamento,
         catalogoItemId: null,
@@ -95,12 +147,12 @@ const SeedImport = {
         funcionarioId: usuario ? usuario.id : null,
         funcionarioNome: this.nomeReal(s.funcionarioNome),
         aprovado: 'aprovado',
-        dataAprovacao: s.dataAprovacao || s.dataFinal || s.criadoEm || null,
-        criadoEm: s.criadoEm || s.dataProgramada || s.dataFinal || null,
+        dataAprovacao: dataPlanilhaParaLocal(s.dataAprovacao || s.dataFinal || s.criadoEm) || null,
+        criadoEm: dataPlanilhaParaLocal(s.criadoEm || s.dataProgramada || s.dataFinal) || null,
         semDataOriginal: !s.criadoEm,
-        concluidoInformadoEm: temFinal ? s.dataFinal : null,
+        concluidoInformadoEm: temFinal ? dataPlanilhaParaLocal(s.dataFinal) : null,
         validadoPeloAdmin: temFinal,
-        validadoEm: temFinal ? s.dataFinal : null,
+        validadoEm: temFinal ? dataPlanilhaParaLocal(s.dataFinal) : null,
         erros: s.erros || 0,
         errosNovos: s.errosNovos || 0,
         importadoDaPlanilha: true,
@@ -119,18 +171,18 @@ const SeedImport = {
         cnpServicoId: numeroPedidoParaCnpId[p.numeroPedido] || null,
         numeroPedido: p.numeroPedido || '',
         nomeProduto: p.nomeProduto,
-        dataChegada: p.dataChegada || null,
-        dataProgramada: p.dataProgramada || null,
+        dataChegada: dataPlanilhaParaLocal(p.dataChegada) || null,
+        dataProgramada: dataPlanilhaParaLocal(p.dataProgramada) || null,
         funcionarioCNPId: usuCNP ? usuCNP.id : null,
         funcionarioCNPNome: p.funcionarioCNPNome ? this.nomeReal(p.funcionarioCNPNome) : null,
         status: p.status,
-        dataInicioCorte: p.dataInicioCorte || null,
-        dataFinalCorte: p.dataFinalCorte || null,
+        dataInicioCorte: dataPlanilhaParaLocal(p.dataInicioCorte) || null,
+        dataFinalCorte: dataPlanilhaParaLocal(p.dataFinalCorte) || null,
         funcionarioCorteId: usuCorte ? usuCorte.id : null,
         funcionarioCorteNome: p.funcionarioCorteNome ? this.nomeReal(p.funcionarioCorteNome) : null,
         aprovado: 'aprovado',
-        dataAprovacao: p.dataFinalCorte || p.dataChegada || null,
-        criadoEm: p.dataChegada || null,
+        dataAprovacao: dataPlanilhaParaLocal(p.dataFinalCorte || p.dataChegada) || null,
+        criadoEm: dataPlanilhaParaLocal(p.dataChegada) || null,
         importadoDaPlanilha: true,
       };
     });
