@@ -926,3 +926,61 @@ td .dq-ferias, .dq-hero__sub .dq-ferias { margin-left: 0; margin-top: 0.6mm; }
 /* aviso rápido */
 #aviso-rapido { position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); transform: translate(-50%, 20px); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 13.5px; box-shadow: var(--shadow-pop); opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; z-index: 60; max-width: 90vw; text-align: center; }
 #aviso-rapido.aviso-rapido--on { opacity: 1; transform: translate(-50%, 0); }
+
+/* Quadro de Destaque — linha do ranking não quebra */
+.dq-rank__linha { flex-wrap: nowrap; }
+.dq-rank__nome { flex: 1 1 60mm; min-width: 0; }
+.dq-rank__barra { flex: 1 1 45mm; min-width: 20mm; }
+.dq-rank__pct { flex: 0 0 auto; white-space: nowrap; }
+.dq-rank__pos, .dq-rank__linha .dq-foto { flex: 0 0 auto; }
+
+/* compactação automática (1 = leve … 5 = máxima) */
+#print-root[data-compacto="1"] .dq-hero .dq-foto { width: 38mm !important; height: 38mm !important; font-size: 17mm !important; }
+#print-root[data-compacto="1"] .dq-hero { padding: 3mm 5mm; }
+#print-root[data-compacto="1"] .dq-hero__faixa { font-size: 14pt; }
+#print-root[data-compacto="1"] .dq-hero__periodo { margin: 1mm 0 2mm; }
+#print-root[data-compacto="1"] .dq-hero__nome { font-size: 22pt; margin-top: 2mm; }
+#print-root[data-compacto="1"] .dq-hero__pct { font-size: 27pt; margin-top: 1mm; }
+#print-root[data-compacto="1"] .dq-rank__linha { padding-top: 0.9mm; padding-bottom: 0.9mm; }
+#print-root[data-compacto="1"] .dq-rank { gap: 0.9mm; }
+#print-root[data-compacto="1"] .dq-tabela td { padding-top: 1.2mm; padding-bottom: 1.2mm; }
+#print-root[data-compacto="1"] .dq-meta { padding: 2mm 2mm; }
+#print-root[data-compacto="1"] .dq-meta .dq-foto { width: 10mm !important; height: 10mm !important; }
+#print-root[data-compacto="1"] .dq-meta__num { font-size: 21pt; }
+#print-root[data-compacto="1"] .rp-secao { margin-top: 2.5mm; }
+#print-root[data-compacto="2"] .dq-hero .dq-foto { width: 31mm !important; height: 31mm !important; font-size: 14mm !important; }
+#print-root[data-compacto="2"] .dq-hero { padding: 2.4mm 5mm; }
+#print-root[data-compacto="2"] .dq-hero__faixa { font-size: 13pt; }
+#print-root[data-compacto="2"] .dq-hero__periodo { margin: 1mm 0 2mm; }
+#print-root[data-compacto="2"] .dq-hero__nome { font-size: 20pt; margin-top: 2mm; }
+#print-root[data-compacto="2"] .dq-hero__pct { font-size: 24pt; margin-top: 1mm; }
+#print-root[data-compacto="2"] .dq-rank__linha { padding-top: 0.7mm; padding-bottom: 0.7mm; }
+#print-root[data-compacto="2"] .dq-rank { gap: 0.9mm; }
+#print-root[data-compacto="2"] .dq-tabela td { padding-top: 1.0mm; padding-bottom: 1.0mm; }
+#print-root[data-compacto="2"] .dq-meta { padding: 1.6mm 2mm; }
+#print-root[data-compacto="2"] .dq-meta .dq-foto { width: 9mm !important; height: 9mm !important; }
+#print-root[data-compacto="2"] .dq-meta__num { font-size: 19pt; }
+#print-root[data-compacto="2"] .rp-secao { margin-top: 2mm; }
+#print-root[data-compacto="3"] .dq-hero .dq-foto { width: 25mm !important; height: 25mm !important; font-size: 11mm !important; }
+#print-root[data-compacto="3"] .dq-hero { padding: 2mm 5mm; }
+#print-root[data-compacto="3"] .dq-hero__faixa { font-size: 12pt; }
+#print-root[data-compacto="3"] .dq-hero__periodo { margin: 1mm 0 2mm; }
+#print-root[data-compacto="3"] .dq-hero__nome { font-size: 18pt; margin-top: 2mm; }
+#print-root[data-compacto="3"] .dq-hero__pct { font-size: 21pt; margin-top: 1mm; }
+#print-root[data-compacto="3"] .dq-rank__linha { padding-top: 0.5mm; padding-bottom: 0.5mm; }
+#print-root[data-compacto="3"] .dq-rank { gap: 0.9mm; }
+#print-root[data-compacto="3"] .dq-tabela td { padding-top: 0.8mm; padding-bottom: 0.8mm; }
+#print-root[data-compacto="3"] .dq-meta { padding: 1.3mm 2mm; }
+#print-root[data-compacto="3"] .dq-meta .dq-foto { width: 8mm !important; height: 8mm !important; }
+#print-root[data-compacto="3"] .dq-meta__num { font-size: 17pt; }
+#print-root[data-compacto="3"] .rp-secao { margin-top: 1.6mm; }
+#print-root[data-compacto="4"] .dq-hero .dq-foto { width: 25mm !important; height: 25mm !important; }
+#print-root[data-compacto="4"] .dq-meta .dq-foto { width: 8mm !important; height: 8mm !important; }
+#print-root[data-compacto="4"] .rp-corpo > * { zoom: 0.9; }
+#print-root[data-compacto="5"] .dq-hero .dq-foto { width: 25mm !important; height: 25mm !important; }
+#print-root[data-compacto="5"] .dq-meta .dq-foto { width: 8mm !important; height: 8mm !important; }
+#print-root[data-compacto="5"] .rp-corpo > * { zoom: 0.8; }
+#print-root[data-compacto="6"] .dq-hero .dq-foto { width: 25mm !important; height: 25mm !important; }
+#print-root[data-compacto="6"] .rp-corpo > * { zoom: 0.7; }
+#print-root[data-compacto="7"] .dq-hero .dq-foto { width: 25mm !important; height: 25mm !important; }
+#print-root[data-compacto="7"] .rp-corpo > * { zoom: 0.6; }

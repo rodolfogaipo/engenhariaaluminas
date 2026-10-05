@@ -239,104 +239,126 @@ function fotoDestaque(u, mm) {
 async function montarPdfDestaque(tipo, ref) {
   const { per, linhas, ranking, destaque } = await Destaque.calcular(tipo, ref);
   const nomes = { semana: 'da Semana', mes: 'do Mês', ano: 'do Ano' };
-  const blocos = [];
+  // Monta os blocos. metaNaTabela = jeito compacto (muita gente): a meta da
+  // semana atual vira uma coluna da tabela em vez dos cartões.
+  const rotSemMetaTab = `${formatarDataCurta(per.rMeta.inicio).slice(0, 5)} a ${formatarDataCurta(per.rMeta.fim - 1).slice(0, 5)}`;
+  const celulaMetaTab = (l) =>
+    l.feriasProx || l.metaProx == null
+      ? 'Férias'
+      : `<b>${l.metaProx}</b>${per.metaEhAtual && l.feitosNaSemanaMeta ? ` <small>· faltam ${Math.max(0, l.metaProx - l.feitosNaSemanaMeta)}</small>` : ''}`;
+  const construir = (metaNaTabela) => {
+    const blocos = [];
 
-  // 1) destaque em grande
-  blocos.push({
-    tipo: 'html',
-    html: destaque
-      ? `<div class="dq-hero">
-          <div class="dq-hero__faixa">Funcionário Destaque ${nomes[tipo]}</div>
-          <div class="dq-hero__periodo">${escapeHtml(per.rotulo)}</div>
-          ${fotoDestaque(destaque.u, 46)}
-          <div class="dq-hero__nome">${escapeHtml(destaque.u.nome)}</div>
-          <div class="dq-hero__pct">${pctTexto(destaque.pct)} <span>da meta</span></div>
-          <div class="dq-hero__sub">${numProjetos(destaque.feitos)} projeto(s) feito(s) · meta de ${numProjetos(destaque.meta)}</div>
-          ${textoFerias(destaque) ? `<div class="dq-hero__sub">${seloFerias(destaque, true)}</div>` : ''}
-        </div>`
-      : `<div class="dq-hero"><div class="dq-hero__faixa">Funcionário Destaque ${nomes[tipo]}</div><div class="dq-hero__periodo">${escapeHtml(per.rotulo)}</div><div class="dq-hero__sub" style="margin-top:8mm">Sem entregas nesse período.</div></div>`,
-  });
-
-  // 2) ranking pela % da meta
-  const medalha = ['🥇', '🥈', '🥉'];
-  const deFerias = linhas.filter((l) => l.emFerias);
-  blocos.push({ tipo: 'titulo', html: '<h2 class="rp-secao">Ranking — % da meta</h2>' });
-  blocos.push({
-    tipo: 'html',
-    html: `<div class="dq-rank">
-      ${ranking
-        .map(
-          (l, i) => `<div class="dq-rank__linha ${i === 0 && destaque ? 'dq-rank__linha--1' : ''}">
-            <span class="dq-rank__pos">${medalha[i] || `${i + 1}º`}</span>
-            ${fotoDestaque(l.u, 9)}
-            <span class="dq-rank__nome">${escapeHtml(l.u.nome)}${seloFerias(l, false)}</span>
-            <span class="dq-rank__barra"><i style="width:${Math.min(100, Math.round(l.pct * 100 / Math.max(1, ranking[0].pct)))}%"></i></span>
-            <span class="dq-rank__pct">${pctTexto(l.pct)}</span>
-          </div>`
-        )
-        .join('')}
-      ${deFerias.map((l) => `<div class="dq-rank__linha dq-rank__linha--ferias"><span class="dq-rank__pos">—</span>${fotoDestaque(l.u, 9)}<span class="dq-rank__nome">${escapeHtml(l.u.nome)}${seloFerias(l, false)}</span><span class="dq-rank__barra dq-rank__barra--vazia"></span><span class="dq-rank__pct">Férias</span></div>`).join('')}
-    </div>`,
-  });
-
-  // 3) tabela alfabética: meta × feitos
-  const alfabetica = [...linhas].sort((a, b) => a.u.nome.localeCompare(b.u.nome, 'pt-BR'));
-  blocos.push({
-    tipo: 'titulo',
-    html: `<h2 class="rp-secao">Projetos ${nomes[tipo]}</h2>${
-      tipo === 'semana'
-        ? ''
-        : `<p class="rp-nota">Projetos feitos: do dia 1 ao último dia ${tipo === 'mes' ? 'do mês' : 'do ano'} (igual ao que cada um vê no Início). Meta e % da meta: pelas semanas que começam no período (cálculo oficial, média semanal).</p>`
-    }`,
-  });
-  blocos.push({
-    tipo: 'tabela',
-    cabecalho: '<tr><th>Funcionário</th><th class="num">Meta de projetos</th><th class="num">Projetos feitos</th><th class="num">% da meta</th></tr>',
-    linhas: alfabetica.map((l) =>
-      l.emFerias
-        ? `<tr><td>${escapeHtml(l.u.nome)}<div>${seloFerias(l, false)}</div></td><td class="num" colspan="3">Férias o período todo</td></tr>`
-        : `<tr><td>${escapeHtml(l.u.nome)}${textoFerias(l) ? `<div>${seloFerias(l, true)}</div>` : ''}</td><td class="num">${numProjetos(l.meta)}</td><td class="num"><b>${numProjetos(l.feitos)}</b></td><td class="num">${pctTexto(l.pct)}</td></tr>`
-    ),
-    classe: 'dq-tabela',
-  });
-
-  if (linhas.some((l) => textoFerias(l))) {
+    // 1) destaque em grande
     blocos.push({
       tipo: 'html',
-      html: '<p class="rp-nota">🏖️ Semanas de férias não entram na % da meta nem na meta de projetos — a média considera só as semanas trabalhadas.</p>',
+      html: destaque
+        ? `<div class="dq-hero">
+            <div class="dq-hero__faixa">Funcionário Destaque ${nomes[tipo]}</div>
+            <div class="dq-hero__periodo">${escapeHtml(per.rotulo)}</div>
+            ${fotoDestaque(destaque.u, 46)}
+            <div class="dq-hero__nome">${escapeHtml(destaque.u.nome)}</div>
+            <div class="dq-hero__pct">${pctTexto(destaque.pct)} <span>da meta</span></div>
+            <div class="dq-hero__sub">${numProjetos(destaque.feitos)} projeto(s) feito(s) · meta de ${numProjetos(destaque.meta)}</div>
+            ${textoFerias(destaque) ? `<div class="dq-hero__sub">${seloFerias(destaque, true)}</div>` : ''}
+          </div>`
+        : `<div class="dq-hero"><div class="dq-hero__faixa">Funcionário Destaque ${nomes[tipo]}</div><div class="dq-hero__periodo">${escapeHtml(per.rotulo)}</div><div class="dq-hero__sub" style="margin-top:8mm">Sem entregas nesse período.</div></div>`,
     });
-  }
 
-  // 4) meta da semana atual — só no Destaque da Semana
-  if (tipo === 'semana') {
-  const rotSemMeta = `${formatarDataCurta(per.rMeta.inicio).slice(0, 5)} a ${formatarDataCurta(per.rMeta.fim - 1).slice(0, 5)}`;
-  blocos.push({
-    tipo: 'titulo',
-    html: `<h2 class="rp-secao">Meta da semana atual — ${rotSemMeta}</h2><p class="rp-nota">Projetos que cada um precisa entregar pra atingir 100% da meta (no prazo e sem erros).</p>`,
-  });
-  blocos.push({
-    tipo: 'html',
-    html: `<div class="dq-metas">${alfabetica
-      .map(
-        (l) => `<div class="dq-meta">
-          ${fotoDestaque(l.u, 12)}
-          <div class="dq-meta__nome">${escapeHtml(primeiroNome(l.u.nome))}</div>
-          ${
-            l.feriasProx || l.metaProx == null
-              ? '<div class="dq-meta__num dq-meta__num--ferias">Férias</div>'
-              : `<div class="dq-meta__num">${l.metaProx}</div><div class="dq-meta__rot">projeto${l.metaProx === 1 ? '' : 's'}${
-                  per.metaEhAtual && l.feitosNaSemanaMeta ? ` · já fez ${l.feitosNaSemanaMeta}, faltam ${Math.max(0, l.metaProx - l.feitosNaSemanaMeta)}` : ''
-                }</div>`
-          }
-        </div>`
-      )
-      .join('')}</div>`,
-  });
-  }
+    // 2) ranking pela % da meta
+    const medalha = ['🥇', '🥈', '🥉'];
+    const deFerias = linhas.filter((l) => l.emFerias);
+    blocos.push({ tipo: 'titulo', html: '<h2 class="rp-secao">Ranking — % da meta</h2>' });
+    blocos.push({
+      tipo: 'html',
+      html: `<div class="dq-rank">
+        ${ranking
+          .map(
+            (l, i) => `<div class="dq-rank__linha ${i === 0 && destaque ? 'dq-rank__linha--1' : ''}">
+              <span class="dq-rank__pos">${medalha[i] || `${i + 1}º`}</span>
+              ${fotoDestaque(l.u, 9)}
+              <span class="dq-rank__nome">${escapeHtml(l.u.nome)}${seloFerias(l, false)}</span>
+              <span class="dq-rank__barra"><i style="width:${Math.min(100, Math.round(l.pct * 100 / Math.max(1, ranking[0].pct)))}%"></i></span>
+              <span class="dq-rank__pct">${pctTexto(l.pct)}</span>
+            </div>`
+          )
+          .join('')}
+        ${deFerias.map((l) => `<div class="dq-rank__linha dq-rank__linha--ferias"><span class="dq-rank__pos">—</span>${fotoDestaque(l.u, 9)}<span class="dq-rank__nome">${escapeHtml(l.u.nome)}${seloFerias(l, false)}</span><span class="dq-rank__barra dq-rank__barra--vazia"></span><span class="dq-rank__pct">Férias</span></div>`).join('')}
+      </div>`,
+    });
 
-  return montarPdfPadrao(blocos, {
-    titulo: `Destaque ${nomes[tipo]}`,
-    periodo: per.rotulo,
-    detalhes: 'Engenharia — reconhecimento da equipe',
-  });
+    // 3) tabela alfabética: meta × feitos
+    const alfabetica = [...linhas].sort((a, b) => a.u.nome.localeCompare(b.u.nome, 'pt-BR'));
+    blocos.push({
+      tipo: 'titulo',
+      html: `<h2 class="rp-secao">Projetos ${nomes[tipo]}</h2>${
+        tipo === 'semana'
+          ? ''
+          : `<p class="rp-nota">Projetos feitos: do dia 1 ao último dia ${tipo === 'mes' ? 'do mês' : 'do ano'} (igual ao que cada um vê no Início). Meta e % da meta: pelas semanas que começam no período (cálculo oficial, média semanal).</p>`
+      }`,
+    });
+    blocos.push({
+      tipo: 'tabela',
+      cabecalho: `<tr><th>Funcionário</th><th class="num">Meta de projetos</th><th class="num">Projetos feitos</th><th class="num">% da meta</th>${
+        metaNaTabela ? `<th class="num">Meta da semana atual<br><small>${rotSemMetaTab}</small></th>` : ''
+      }</tr>`,
+      linhas: alfabetica.map((l) =>
+        l.emFerias
+          ? `<tr><td>${escapeHtml(l.u.nome)}<div>${seloFerias(l, false)}</div></td><td class="num" colspan="3">Férias o período todo</td>${metaNaTabela ? `<td class="num">${celulaMetaTab(l)}</td>` : ''}</tr>`
+          : `<tr><td>${escapeHtml(l.u.nome)}${textoFerias(l) ? `<div>${seloFerias(l, true)}</div>` : ''}</td><td class="num">${numProjetos(l.meta)}</td><td class="num"><b>${numProjetos(l.feitos)}</b></td><td class="num">${pctTexto(l.pct)}</td>${metaNaTabela ? `<td class="num">${celulaMetaTab(l)}</td>` : ''}</tr>`
+      ),
+      classe: 'dq-tabela',
+    });
+
+    if (linhas.some((l) => textoFerias(l))) {
+      blocos.push({
+        tipo: 'html',
+        html: '<p class="rp-nota">🏖️ Semanas de férias não entram na % da meta nem na meta de projetos — a média considera só as semanas trabalhadas.</p>',
+      });
+    }
+
+    // 4) meta da semana atual — só no Destaque da Semana
+    if (tipo === 'semana' && !metaNaTabela) {
+    const rotSemMeta = `${formatarDataCurta(per.rMeta.inicio).slice(0, 5)} a ${formatarDataCurta(per.rMeta.fim - 1).slice(0, 5)}`;
+    blocos.push({
+      tipo: 'titulo',
+      html: `<h2 class="rp-secao">Meta da semana atual — ${rotSemMeta}</h2><p class="rp-nota">Projetos que cada um precisa entregar pra atingir 100% da meta (no prazo e sem erros).</p>`,
+    });
+    blocos.push({
+      tipo: 'html',
+      html: `<div class="dq-metas">${alfabetica
+        .map(
+          (l) => `<div class="dq-meta">
+            ${fotoDestaque(l.u, 12)}
+            <div class="dq-meta__nome">${escapeHtml(primeiroNome(l.u.nome))}</div>
+            ${
+              l.feriasProx || l.metaProx == null
+                ? '<div class="dq-meta__num dq-meta__num--ferias">Férias</div>'
+                : `<div class="dq-meta__num">${l.metaProx}</div><div class="dq-meta__rot">projeto${l.metaProx === 1 ? '' : 's'}${
+                    per.metaEhAtual && l.feitosNaSemanaMeta ? ` · já fez ${l.feitosNaSemanaMeta}, faltam ${Math.max(0, l.metaProx - l.feitosNaSemanaMeta)}` : ''
+                  }</div>`
+            }
+          </div>`
+        )
+        .join('')}</div>`,
+    });
+    }
+    return blocos;
+  };
+
+  // O quadro vai pra parede: tem que caber numa folha só. Se passar,
+  // compacta um nível (foto menor, espaços e letras menores) e tenta de novo.
+  let n = 1;
+  for (let nivel = 0; nivel <= 7; nivel++) {
+    // do nível 3 em diante (semana), a meta vira coluna da tabela
+    const blocos = construir(tipo === 'semana' && nivel >= 3);
+    n = await montarPdfPadrao(blocos, {
+      titulo: `Destaque ${nomes[tipo]}`,
+      periodo: per.rotulo,
+      detalhes: 'Engenharia — reconhecimento da equipe',
+      compacto: nivel || '',
+    });
+    if (n <= 1) break;
+  }
+  return n;
 }

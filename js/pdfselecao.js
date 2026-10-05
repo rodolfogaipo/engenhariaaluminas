@@ -99,6 +99,7 @@ function renderBarraSelecaoPdf(cfg) {
 // monta as folhas A4 com o cabeçalho padrão e espera as imagens carregarem
 async function montarPdfPadrao(blocos, cab) {
   const root = garantirPrintRoot();
+  root.dataset.compacto = cab && cab.compacto ? String(cab.compacto) : '';
   const n = paginarRelatorio(root, blocos, {
     geradoEm: Const.formatarDataHora(Date.now()),
     detalhes: '',

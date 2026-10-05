@@ -582,6 +582,7 @@ function garantirPrintRoot() {
     root.id = 'print-root';
     document.body.appendChild(root);
   }
+  root.dataset.compacto = ''; // só o Quadro de Destaque usa (pra caber numa folha)
   return root;
 }
 
