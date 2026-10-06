@@ -122,7 +122,12 @@ async function renderAdminMais(cont) {
       <h3 class="section-title" style="font-size:16px">💾 Backup dos dados</h3>
       <p class="section-sub">Baixa uma cópia de tudo (serviços, corte, usuários, avisos, etc.) num arquivo .json, pra guardar no seu computador.</p>
       <div id="backup-status" class="row__meta" style="margin-bottom:10px"></div>
-      <button class="btn btn--primary" id="btn-fazer-backup">Fazer backup agora</button>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn btn--primary" id="btn-fazer-backup">Fazer backup agora</button>
+        <button class="btn btn--ghost" id="btn-restaurar-backup">Restaurar de um backup…</button>
+        <input type="file" id="f-arquivo-backup" accept=".json,application/json" style="display:none" />
+      </div>
+      <div id="restaurar-painel"></div>
     </div>
 
     <div class="card" style="margin-top:16px">
@@ -205,6 +210,31 @@ async function renderAdminMais(cont) {
     }
     btn.disabled = false;
   });
+
+  const inputBackup = document.getElementById('f-arquivo-backup');
+  document.getElementById('btn-restaurar-backup').addEventListener('click', () => inputBackup.click());
+  inputBackup.addEventListener('change', async () => {
+    const arquivo = inputBackup.files && inputBackup.files[0];
+    inputBackup.value = '';
+    if (!arquivo) return;
+    const painel = document.getElementById('restaurar-painel');
+    painel.innerHTML = '<div class="row__meta" style="margin-top:12px">Lendo o arquivo…</div>';
+    try {
+      const dados = JSON.parse(await arquivo.text());
+      if (!dados || typeof dados !== 'object' || !Array.isArray(dados.servicos) || !Array.isArray(dados.usuarios)) {
+        throw new Error('esse arquivo não parece um backup do Engenharia Aluminas.');
+      }
+      AdminView.restaurar = { dados, nomeArquivo: arquivo.name, status: '' };
+      await renderPainelRestaurar(painel, dados, arquivo.name);
+    } catch (e) {
+      painel.innerHTML = `<div class="auth__error show" style="text-align:left; margin-top:12px">Não consegui ler: ${escapeHtml(e.message || String(e))}</div>`;
+    }
+  });
+
+  // a tela pode ser redesenhada (dados novos chegando): o painel volta
+  if (AdminView.restaurar) {
+    renderPainelRestaurar(document.getElementById('restaurar-painel'), AdminView.restaurar.dados, AdminView.restaurar.nomeArquivo);
+  }
 
   renderCartaoFeriados(document.getElementById('feriados-cont'));
 
@@ -959,7 +989,146 @@ async function contarPendencias() {
 
 /* ---------------- BACKUP ---------------- */
 
-async function fazerBackup() {
+/* ---------------- RESTAURAR BACKUP ----------------
+   Dois jeitos:
+   - "Completar o que falta": só grava o que está no backup e NÃO existe
+     mais no app (ex: algo apagado sem querer). Não mexe em nada que já existe.
+   - "Voltar exatamente ao backup": cada registro fica igual ao do backup
+     e o que foi criado depois do backup é apagado. É uma volta no tempo.
+   Antes de qualquer um dos dois, baixa automaticamente um backup de como
+   está agora — se arrepender, é só restaurar esse arquivo. */
+const NOMES_COLECOES_BACKUP = {
+  usuarios: 'Usuários',
+  servicos: 'Serviços',
+  plano_corte: 'Plano de Corte',
+  ferias: 'Férias',
+  avisos: 'Avisos',
+  anotacoes_admin: 'Anotações',
+  diario_admin: 'Diário do Admin',
+  treinamento: 'Treino',
+  config: 'Configurações',
+  destaques: 'Destaques',
+  catalogo_itens: 'Catálogo',
+  categorias_servico: 'Categorias de serviço',
+  produtos_mkt: 'MKT',
+  materiais: 'Materiais',
+  categorias_material: 'Categorias de material',
+  feriados: 'Feriados',
+};
+
+function chaveDeRegistroBackup(r) {
+  return String(r.id ?? r.chave ?? '');
+}
+
+async function renderPainelRestaurar(painel, dados, nomeArquivo) {
+  const colecoes = Object.keys(NOMES_COLECOES_BACKUP).filter((c) => Array.isArray(dados[c]));
+  const linhas = [];
+  for (const c of colecoes) {
+    const atuais = await DB.getAllAtualizado(c);
+    const idsAtuais = new Set(atuais.map(chaveDeRegistroBackup));
+    const idsBackup = new Set(dados[c].map(chaveDeRegistroBackup));
+    const faltando = dados[c].filter((r) => !idsAtuais.has(chaveDeRegistroBackup(r))).length;
+    const novos = atuais.filter((r) => !idsBackup.has(chaveDeRegistroBackup(r))).length;
+    linhas.push({ c, noBackup: dados[c].length, agora: atuais.length, faltando, novos });
+  }
+  const quando = dados.exportadoEm ? Const.formatarDataHora(dados.exportadoEm) : 'data desconhecida';
+
+  painel.innerHTML = `
+    <div class="restaurar-box">
+      <div class="row__title" style="margin-bottom:4px">Backup de ${escapeHtml(quando)}</div>
+      <div class="row__meta" style="margin-bottom:10px">${escapeHtml(nomeArquivo)}</div>
+      <div class="tabela-wrap">
+        <table class="tabela">
+          <thead><tr><th></th><th>O quê</th><th class="num">No backup</th><th class="num">No app agora</th><th class="num">Só no backup</th><th class="num">Criados depois</th></tr></thead>
+          <tbody>${linhas
+            .map(
+              (l) => `<tr>
+                <td><input type="checkbox" data-rest-col="${l.c}" ${l.c === 'config' ? '' : 'checked'} /></td>
+                <td>${NOMES_COLECOES_BACKUP[l.c]}</td>
+                <td class="num">${l.noBackup}</td>
+                <td class="num">${l.agora}</td>
+                <td class="num">${l.faltando ? `<b>${l.faltando}</b>` : 0}</td>
+                <td class="num">${l.novos}</td>
+              </tr>`
+            )
+            .join('')}</tbody>
+        </table>
+      </div>
+      <div class="row__meta" style="margin:6px 0 12px">"Só no backup" = existe no arquivo mas não existe mais no app (foi apagado). "Criados depois" = existe no app mas não existia quando o backup foi feito.</div>
+
+      <label class="perm-item" style="margin-bottom:8px"><input type="radio" name="modo-rest" value="completar" checked />
+        <span><b>Completar o que falta</b> — só traz de volta o que foi apagado. Não mexe em nada que já existe no app.</span></label>
+      <label class="perm-item"><input type="radio" name="modo-rest" value="exato" />
+        <span><b>Voltar exatamente ao backup</b> — tudo fica igual estava em ${escapeHtml(quando)}. O que foi feito ou criado depois disso <b>se perde</b>.</span></label>
+
+      <div class="row__meta" style="margin:12px 0">🛟 Antes de restaurar, o app baixa sozinho um backup de como está agora — se arrepender, é só restaurar esse arquivo.</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn btn--ghost" id="btn-rest-cancelar">Cancelar</button>
+        <button class="btn btn--primary" id="btn-rest-executar">Restaurar</button>
+      </div>
+      <div class="row__meta" id="rest-status" style="margin-top:10px"></div>
+    </div>`;
+
+  const st = document.getElementById('rest-status');
+  if (AdminView.restaurar && AdminView.restaurar.status) st.innerHTML = AdminView.restaurar.status;
+  const guardarStatus = (html) => {
+    const el = document.getElementById('rest-status');
+    if (el) el.innerHTML = html;
+    if (AdminView.restaurar) AdminView.restaurar.status = html;
+  };
+  document.getElementById('btn-rest-cancelar').addEventListener('click', () => {
+    AdminView.restaurar = null;
+    painel.innerHTML = '';
+  });
+  document.getElementById('btn-rest-executar').addEventListener('click', async () => {
+    const escolhidas = Array.from(painel.querySelectorAll('[data-rest-col]:checked')).map((x) => x.dataset.restCol);
+    const modo = painel.querySelector('[name="modo-rest"]:checked').value;
+    if (!escolhidas.length) return alert('Marque pelo menos uma parte pra restaurar.');
+    if (modo === 'exato') {
+      const conf = prompt(`Isso volta ${escolhidas.length} parte(s) do app pra como estava em ${quando}. O que foi feito depois se perde.\n\nPra confirmar, digite RESTAURAR:`);
+      if ((conf || '').trim().toUpperCase() !== 'RESTAURAR') return;
+    } else if (!confirm('Trazer de volta o que existe no backup e foi apagado do app?')) return;
+
+    const btn = document.getElementById('btn-rest-executar');
+    btn.disabled = true;
+    window.operacaoEmAndamento = true;
+    try {
+      guardarStatus('Baixando um backup de segurança de como está agora…');
+      await fazerBackup('backup-ANTES-DE-RESTAURAR');
+      let gravados = 0;
+      let apagados = 0;
+      for (const c of escolhidas) {
+        guardarStatus(`Restaurando ${NOMES_COLECOES_BACKUP[c]}…`);
+        const atuais = await DB.getAllAtualizado(c);
+        const idsAtuais = new Set(atuais.map(chaveDeRegistroBackup));
+        const doBackup = dados[c].filter((r) => chaveDeRegistroBackup(r));
+        if (modo === 'completar') {
+          const faltando = doBackup.filter((r) => !idsAtuais.has(chaveDeRegistroBackup(r)));
+          if (faltando.length) await DB.putMany(c, faltando);
+          gravados += faltando.length;
+        } else {
+          if (doBackup.length) await DB.putMany(c, doBackup);
+          gravados += doBackup.length;
+          const idsBackup = new Set(doBackup.map(chaveDeRegistroBackup));
+          const sobrando = atuais.map(chaveDeRegistroBackup).filter((k) => k && !idsBackup.has(k));
+          if (sobrando.length) await DB.deleteMany(c, sobrando);
+          apagados += sobrando.length;
+        }
+      }
+      window.operacaoEmAndamento = false;
+      if (typeof Tempo !== 'undefined') Tempo.limparCache();
+      guardarStatus(`<b>Pronto!</b> ${gravados} registro(s) gravado(s)${modo === 'exato' ? ` e ${apagados} apagado(s)` : ''}. O backup de segurança foi baixado como "backup-ANTES-DE-RESTAURAR…".`);
+      mostrarAvisoRapido('Backup restaurado ✓');
+    } catch (e) {
+      window.operacaoEmAndamento = false;
+      guardarStatus(`<span style="color:var(--danger-fg)">Parou no meio: ${escapeHtml(e.message || String(e))}. O backup de segurança já foi baixado — dá pra tentar de novo.</span>`);
+    }
+    const b2 = document.getElementById('btn-rest-executar');
+    if (b2) b2.disabled = false;
+  });
+}
+
+async function fazerBackup(prefixo = 'backup-engenharia-aluminas') {
   const colecoes = [
     'usuarios',
     'servicos',
@@ -981,15 +1150,17 @@ async function fazerBackup() {
 
   const dados = { exportadoEm: Date.now() };
   for (const nome of colecoes) {
-    dados[nome] = await DB.getAll(nome);
+    dados[nome] = await DB.getAllAtualizado(nome); // versão do servidor, nunca a cópia velha do aparelho
   }
 
   const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
-  const dataStr = new Date().toISOString().slice(0, 10);
+  const agora = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const dataStr = `${agora.getFullYear()}-${pad(agora.getMonth() + 1)}-${pad(agora.getDate())}_${pad(agora.getHours())}h${pad(agora.getMinutes())}`;
   const a = document.createElement('a');
   a.href = url;
-  a.download = `backup-engenharia-aluminas-${dataStr}.json`;
+  a.download = `${prefixo}-${dataStr}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();

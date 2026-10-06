@@ -984,3 +984,9 @@ td .dq-ferias, .dq-hero__sub .dq-ferias { margin-left: 0; margin-top: 0.6mm; }
 #print-root[data-compacto="6"] .rp-corpo > * { zoom: 0.7; }
 #print-root[data-compacto="7"] .dq-hero .dq-foto { width: 25mm !important; height: 25mm !important; }
 #print-root[data-compacto="7"] .rp-corpo > * { zoom: 0.6; }
+
+/* restaurar backup */
+.restaurar-box { margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-m); background: var(--surface-sunken); }
+.restaurar-box .perm-item { align-items: flex-start; background: var(--surface); }
+.restaurar-box .perm-item input { margin-top: 2px; }
+.restaurar-box .tabela td input { width: 16px; height: 16px; accent-color: var(--brand-700); }
