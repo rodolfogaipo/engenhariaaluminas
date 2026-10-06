@@ -409,8 +409,7 @@ async function atualizarListaServicos(view) {
     btn.addEventListener('click', async () => {
       const registro = await DB.get('servicos', btn.dataset.desconsiderarTempo);
       if (!registro) return;
-      registro.tempoDesconsiderado = !registro.tempoDesconsiderado;
-      await DB.put('servicos', registro);
+      await DB.atualizarCampos('servicos', registro.id, { tempoDesconsiderado: !registro.tempoDesconsiderado });
       Tempo.limparCache();
       atualizarListaServicos(view);
     });
@@ -424,7 +423,11 @@ async function atualizarListaServicos(view) {
       registro.funcionarioId = user.id;
       registro.funcionarioNome = user.nome;
       registro.iniciadoEm = Date.now();
-      await DB.put('servicos', registro);
+      await DB.atualizarCampos('servicos', registro.id, {
+        funcionarioId: registro.funcionarioId,
+        funcionarioNome: registro.funcionarioNome,
+        iniciadoEm: registro.iniciadoEm,
+      });
       if (registro.tipo === 'CNP') await sincronizarPlanoCorteComCNP(registro);
       atualizarListaServicos(view);
     });
@@ -434,8 +437,7 @@ async function atualizarListaServicos(view) {
     btn.addEventListener('click', async () => {
       const registro = await DB.get('servicos', btn.dataset.marcarConcluido);
       if (!registro) return;
-      registro.concluidoInformadoEm = Date.now();
-      await DB.put('servicos', registro);
+      await DB.atualizarCampos('servicos', registro.id, { concluidoInformadoEm: Date.now() });
       atualizarListaServicos(view);
     });
   });
@@ -447,7 +449,7 @@ async function atualizarListaServicos(view) {
       if (!registro) return;
       registro.aprovado = 'aprovado';
       registro.dataAprovacao = Date.now();
-      await DB.put('servicos', registro);
+      await DB.atualizarCampos('servicos', registro.id, { aprovado: 'aprovado', dataAprovacao: registro.dataAprovacao });
       if (registro.tipo === 'CNP') await sincronizarPlanoCorteComCNP(registro);
       atualizarListaServicos(view);
     });
@@ -1433,14 +1435,19 @@ async function criarPlanoCorteParaCNP(registroCNP) {
 }
 
 async function sincronizarPlanoCorteComCNP(registroCNP) {
-  const todos = await DB.getAll('plano_corte');
+  // versão do servidor (nunca a cópia guardada no aparelho)
+  const todos = await DB.getAllAtualizado('plano_corte');
   const pc = todos.find((p) => p.cnpServicoId === registroCNP.id);
   if (!pc) return criarPlanoCorteParaCNP(registroCNP);
-  pc.numeroPedido = registroCNP.numeroPedido || '';
-  pc.nomeProduto = registroCNP.nome;
-  // Data Programada NÃO é sincronizada — cada aba tem a sua, não afeta a outra
-  await DB.put('plano_corte', pc);
-  return pc;
+  // Só o nome e o nº do pedido vêm da CNP. Grava SÓ esses dois campos —
+  // regravar o registro inteiro podia desfazer um corte feito por
+  // outra pessoa (status, datas, funcionário do corte).
+  // Data Programada NÃO é sincronizada — cada aba tem a sua.
+  const campos = { numeroPedido: registroCNP.numeroPedido || '', nomeProduto: registroCNP.nome };
+  if (pc.numeroPedido !== campos.numeroPedido || pc.nomeProduto !== campos.nomeProduto) {
+    await DB.atualizarCampos('plano_corte', pc.id, campos);
+  }
+  return { ...pc, ...campos };
 }
 
 async function excluirPlanoCorteLigado(cnpServicoId) {

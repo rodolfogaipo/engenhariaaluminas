@@ -114,10 +114,9 @@ const Categorias = {
     // os serviços guardam o NOME da categoria — leva o nome novo pra
     // eles, senão ficariam presos no nome antigo
     if (nomeAntigo) {
-      const servicos = await DB.getAll('servicos');
+      const servicos = await DB.getAllAtualizado('servicos');
       const afetados = servicos.filter((s) => s.tipo === nomeAntigo);
-      afetados.forEach((s) => (s.tipo = cat.nome));
-      if (afetados.length) await DB.putMany('servicos', afetados);
+      if (afetados.length) await DB.atualizarCamposEmLote('servicos', afetados.map((s) => ({ id: s.id, campos: { tipo: cat.nome } })));
     }
     return cat;
   },

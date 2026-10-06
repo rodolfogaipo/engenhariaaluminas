@@ -527,18 +527,18 @@ function renderMaterialForm(view) {
           // correção de nome/largura vale também pros serviços que já
           // usam esse material (eles guardam uma cópia pra relatórios)
           if (st.editId) {
-            const servicos = await DB.getAll('servicos');
+            const servicos = await DB.getAllAtualizado('servicos');
             const afetados = servicos.filter(
               (s) =>
                 s.materialId === registro.id &&
                 (s.materialNome !== registro.nome || s.materialLargura !== registro.largura || s.materialTipo !== registro.tipo)
             );
-            afetados.forEach((s) => {
-              s.materialNome = registro.nome;
-              s.materialLargura = registro.largura;
-              s.materialTipo = registro.tipo;
-            });
-            if (afetados.length) await DB.putMany('servicos', afetados);
+            if (afetados.length) {
+              await DB.atualizarCamposEmLote(
+                'servicos',
+                afetados.map((s) => ({ id: s.id, campos: { materialNome: registro.nome, materialLargura: registro.largura, materialTipo: registro.tipo } }))
+              );
+            }
           }
         })()
       );
@@ -707,12 +707,10 @@ async function renderCategoriasMaterial(view) {
               await DB.put('categorias_material', cat);
               if (antigo !== nome) {
                 // leva o nome novo pros materiais e pros serviços que já usam
-                const mats = (await DB.getAll('materiais')).filter((m) => m.tipo === antigo);
-                mats.forEach((m) => (m.tipo = nome));
-                if (mats.length) await DB.putMany('materiais', mats);
-                const servs = (await DB.getAll('servicos')).filter((sv) => sv.materialTipo === antigo);
-                servs.forEach((sv) => (sv.materialTipo = nome));
-                if (servs.length) await DB.putMany('servicos', servs);
+                const mats = (await DB.getAllAtualizado('materiais')).filter((m) => m.tipo === antigo);
+                if (mats.length) await DB.atualizarCamposEmLote('materiais', mats.map((m) => ({ id: m.id, campos: { tipo: nome } })));
+                const servs = (await DB.getAllAtualizado('servicos')).filter((sv) => sv.materialTipo === antigo);
+                if (servs.length) await DB.atualizarCamposEmLote('servicos', servs.map((sv) => ({ id: sv.id, campos: { materialTipo: nome } })));
                 if (MateriaisView.filtroTipo === antigo) MateriaisView.filtroTipo = nome;
               }
             } else {

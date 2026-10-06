@@ -29,6 +29,7 @@ import {
   doc,
   setDoc,
   deleteDoc,
+  updateDoc,
   onSnapshot,
   writeBatch,
   getDocsFromServer,
@@ -60,46 +61,67 @@ const _colecoes = {};
 // sempre que os dados mudarem (localmente ou vindos de outro aparelho)
 window.aoDadosMudarem = () => {};
 
+/* Cada coleção tem duas "prontidões":
+   - pronto: chegou o 1º retrato (pode ser a CÓPIA GUARDADA no aparelho,
+     que às vezes está velha) → bom pra MOSTRAR rápido na tela;
+   - sincronizado: chegou a versão do SERVIDOR → obrigatório antes de
+     GRAVAR. Sem isso, um aparelho que ficou dias sem abrir o app podia
+     ler a cópia velha e gravar por cima do que os outros fizeram.
+   Sem internet, libera depois de 12 s com o que tiver (como antes). */
 function garantirColecao(nome) {
   if (_colecoes[nome]) return _colecoes[nome];
-
-  const estado = { mapa: new Map(), pronto: null };
-  estado.pronto = new Promise((resolve) => {
-    let primeiraVez = true;
-    onSnapshot(
-      collection(firestore, nome),
-      (snapshot) => {
-        snapshot.docChanges().forEach((mudanca) => {
-          if (mudanca.type === 'removed') {
-            estado.mapa.delete(mudanca.doc.id);
-          } else {
-            estado.mapa.set(mudanca.doc.id, mudanca.doc.data());
-          }
-        });
-        if (primeiraVez) {
-          primeiraVez = false;
-          resolve();
-        } else {
-          // atualização depois da primeira carga: atualiza a tela sozinho
-          window.aoDadosMudarem();
-        }
-      },
-      () => resolve() // se der erro (ex: sem internet na 1ª vez), libera assim mesmo
-    );
-  });
-
+  const estado = { mapa: new Map(), pronto: null, sincronizado: null, doServidor: false };
+  let liberarPronto;
+  let liberarSinc;
+  estado.pronto = new Promise((r) => (liberarPronto = r));
+  estado.sincronizado = new Promise((r) => (liberarSinc = r));
+  let primeiraVez = true;
+  const timerSinc = setTimeout(() => liberarSinc(), 12000);
+  onSnapshot(
+    collection(firestore, nome),
+    { includeMetadataChanges: true },
+    (snapshot) => {
+      const mudancas = snapshot.docChanges();
+      mudancas.forEach((mudanca) => {
+        if (mudanca.type === 'removed') estado.mapa.delete(mudanca.doc.id);
+        else estado.mapa.set(mudanca.doc.id, mudanca.doc.data());
+      });
+      if (!snapshot.metadata.fromCache && !estado.doServidor) {
+        estado.doServidor = true;
+        clearTimeout(timerSinc);
+        liberarSinc();
+      }
+      if (primeiraVez) {
+        primeiraVez = false;
+        liberarPronto();
+      } else if (mudancas.length) {
+        window.aoDadosMudarem();
+      }
+    },
+    () => {
+      clearTimeout(timerSinc);
+      liberarPronto();
+      liberarSinc();
+    }
+  );
   _colecoes[nome] = estado;
   return estado;
 }
 
+async function esperarServidor(nome) {
+  await garantirColecao(nome).sincronizado;
+}
+
 const DB = {
   async put(storeName, record) {
+    await esperarServidor(storeName);
     const chave = chaveDoRegistro(record);
     await setDoc(doc(firestore, storeName, chave), record);
     return record;
   },
 
   async putMany(storeName, records) {
+    await esperarServidor(storeName);
     // Firestore só aceita até 500 operações por lote
     const TAMANHO_LOTE = 450;
     for (let i = 0; i < records.length; i += TAMANHO_LOTE) {
@@ -128,16 +150,42 @@ const DB = {
   // certeza absoluta do que realmente existe salvo — usado nas
   // ferramentas de diagnóstico do Admin, pra nunca mais depender do
   // que um aparelho específico guardou localmente.
+  // lista já com a versão do servidor (pra quem vai gravar em cima)
+  async getAllAtualizado(storeName) {
+    const c = garantirColecao(storeName);
+    await c.sincronizado;
+    return Array.from(c.mapa.values());
+  },
+
+  /* Grava SÓ os campos informados, sem mexer no resto do registro.
+     Se outra pessoa mudou outro campo ao mesmo tempo, nada se perde. */
+  async atualizarCampos(storeName, key, campos) {
+    await esperarServidor(storeName);
+    await updateDoc(doc(firestore, storeName, String(key)), campos);
+  },
+
+  async atualizarCamposEmLote(storeName, itens) {
+    await esperarServidor(storeName);
+    const TAMANHO_LOTE = 450;
+    for (let i = 0; i < itens.length; i += TAMANHO_LOTE) {
+      const lote = writeBatch(firestore);
+      itens.slice(i, i + TAMANHO_LOTE).forEach(({ id, campos }) => lote.update(doc(firestore, storeName, String(id)), campos));
+      await lote.commit();
+    }
+  },
+
   async getAllFromServer(storeName) {
     const snapshot = await getDocsFromServer(collection(firestore, storeName));
     return snapshot.docs.map((d) => d.data());
   },
 
   async delete(storeName, key) {
+    await esperarServidor(storeName);
     await deleteDoc(doc(firestore, storeName, String(key)));
   },
 
   async deleteMany(storeName, keys) {
+    await esperarServidor(storeName);
     // Firestore só aceita até 500 operações por lote — em vez de
     // apagar um por um (lento, com ida e volta ao servidor a cada
     // item), manda tudo em blocos de até 450 numa única operação
@@ -152,7 +200,7 @@ const DB = {
 
   async clear(storeName) {
     const c = garantirColecao(storeName);
-    await c.pronto;
+    await c.sincronizado;
     const chaves = Array.from(c.mapa.keys());
     const TAMANHO_LOTE = 450;
     for (let i = 0; i < chaves.length; i += TAMANHO_LOTE) {

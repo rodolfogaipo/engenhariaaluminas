@@ -473,8 +473,7 @@ function ligarAcoesAtelie(listaEl, view, filtrados, redesenhar) {
     b.addEventListener('click', async () => {
       const s = await DB.get('servicos', b.dataset.atelieCancelarPedido);
       if (!s) return;
-      s.atelieSolicitacao = null;
-      await DB.put('servicos', s);
+      await DB.atualizarCampos('servicos', s.id, { atelieSolicitacao: null });
       renderAtelie(view);
     })
   );
@@ -682,7 +681,14 @@ async function salvarSituacaoAtelieVarias(ids, status, obs) {
       s.atelieSolicitacao = { status, obs: obsFinal, porId: Auth.current.id, porNome: Auth.current.nome, em: agora };
     }
   });
-  if (registros.length) await DB.putMany('servicos', registros);
+  if (registros.length) {
+    // só os campos do ateliê — não regrava o serviço inteiro
+    const CAMPOS = ['atelieStatus', 'atelieObs', 'atelieMarcadoPorId', 'atelieMarcadoPorNome', 'atelieMarcadoEm', 'atelieSolicitacao'];
+    await DB.atualizarCamposEmLote(
+      'servicos',
+      registros.map((r) => ({ id: r.id, campos: Object.fromEntries(CAMPOS.filter((c) => r[c] !== undefined).map((c) => [c, r[c]])) }))
+    );
+  }
   if (typeof atualizarBadgesTabbar === 'function') atualizarBadgesTabbar();
 }
 
@@ -791,7 +797,8 @@ async function salvarSituacaoAtelie(id, status, obs) {
       em: agora,
     };
   }
-  await DB.put('servicos', s);
+  const CAMPOS_AT = ['atelieStatus', 'atelieObs', 'atelieMarcadoPorId', 'atelieMarcadoPorNome', 'atelieMarcadoEm', 'atelieSolicitacao', 'atelieAutorizadoPor', 'atelieAutorizadoEm'];
+  await DB.atualizarCampos('servicos', s.id, Object.fromEntries(CAMPOS_AT.filter((c) => s[c] !== undefined).map((c) => [c, s[c]])));
   if (typeof atualizarBadgesTabbar === 'function') atualizarBadgesTabbar();
 }
 
@@ -809,7 +816,8 @@ async function autorizarPedidoAtelie(id, autorizar) {
     s.atelieAutorizadoEm = Date.now();
   }
   s.atelieSolicitacao = null;
-  await DB.put('servicos', s);
+  const CAMPOS_AT = ['atelieStatus', 'atelieObs', 'atelieMarcadoPorId', 'atelieMarcadoPorNome', 'atelieMarcadoEm', 'atelieSolicitacao', 'atelieAutorizadoPor', 'atelieAutorizadoEm'];
+  await DB.atualizarCampos('servicos', s.id, Object.fromEntries(CAMPOS_AT.filter((c) => s[c] !== undefined).map((c) => [c, s[c]])));
   if (typeof atualizarBadgesTabbar === 'function') atualizarBadgesTabbar();
 }
 

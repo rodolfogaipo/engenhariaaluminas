@@ -38,14 +38,17 @@ async function corrigirFusoPlanilhaSePreciso() {
   try {
     const feito = await DB.get('config', 'migracao_fuso_planilha');
     if (feito) return;
-    const [servicos, cortes] = await Promise.all([DB.getAll('servicos'), DB.getAll('plano_corte')]);
+    // NÃO É MAIS CHAMADA AUTOMATICAMENTE. Se um dia precisar: lê do servidor
+    // e grava só os campos de data (nunca o registro inteiro).
+    const [servicos, cortes] = await Promise.all([DB.getAllFromServer('servicos'), DB.getAllFromServer('plano_corte')]);
     const sAlt = servicos.filter((r) => r.importadoDaPlanilha && corrigirDatasDoRegistro(r, CAMPOS_DATA_SERVICO));
     const cAlt = cortes.filter((r) => r.importadoDaPlanilha && corrigirDatasDoRegistro(r, CAMPOS_DATA_CORTE));
     if (sAlt.length || cAlt.length) {
       mostrarAvisoRapido(`Corrigindo as datas que vieram da planilha (${sAlt.length + cAlt.length} registros)… é só uma vez.`);
       window.operacaoEmAndamento = true;
-      if (sAlt.length) await DB.putMany('servicos', sAlt);
-      if (cAlt.length) await DB.putMany('plano_corte', cAlt);
+      const soDatas = (r, campos) => ({ id: r.id, campos: Object.fromEntries(campos.filter((c) => r[c] !== undefined).map((c) => [c, r[c]])) });
+      if (sAlt.length) await DB.atualizarCamposEmLote('servicos', sAlt.map((r) => soDatas(r, CAMPOS_DATA_SERVICO)));
+      if (cAlt.length) await DB.atualizarCamposEmLote('plano_corte', cAlt.map((r) => soDatas(r, CAMPOS_DATA_CORTE)));
       window.operacaoEmAndamento = false;
     }
     await DB.put('config', { chave: 'migracao_fuso_planilha', valor: Date.now(), servicos: sAlt.length, cortes: cAlt.length });

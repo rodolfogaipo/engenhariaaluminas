@@ -132,7 +132,6 @@ document.addEventListener('click', (ev) => {
 function renderShell(root) {
   const user = Auth.current;
   garantirAbaPermitida();
-  if (Auth.isAdmin()) setTimeout(() => corrigirFusoPlanilhaSePreciso(), 1500);
   root.innerHTML = `
     <div id="app-shell">
       <header class="topbar">

@@ -208,9 +208,7 @@ async function atualizarListaCorte(view) {
     btn.addEventListener('click', async () => {
       const pc = await DB.get('plano_corte', btn.dataset.aprovar);
       if (!pc) return;
-      pc.aprovado = 'aprovado';
-      pc.dataAprovacao = Date.now();
-      await DB.put('plano_corte', pc);
+      await DB.atualizarCampos('plano_corte', pc.id, { aprovado: 'aprovado', dataAprovacao: Date.now() });
       atualizarListaCorte(view);
     });
   });
@@ -219,14 +217,12 @@ async function atualizarListaCorte(view) {
     btn.addEventListener('click', async () => {
       const pc = await DB.get('plano_corte', btn.dataset.iniciarCorte);
       if (!pc || pc.dataInicioCorte) return;
-      pc.dataInicioCorte = Date.now();
-      pc.status = 'Em andamento';
+      const campos = { dataInicioCorte: Date.now(), status: 'Em andamento', atualizadoEm: Date.now() };
       if (!pc.funcionarioCorteId) {
-        pc.funcionarioCorteId = user.id;
-        pc.funcionarioCorteNome = user.nome;
+        campos.funcionarioCorteId = user.id;
+        campos.funcionarioCorteNome = user.nome;
       }
-      pc.atualizadoEm = Date.now();
-      await DB.put('plano_corte', pc);
+      await DB.atualizarCampos('plano_corte', pc.id, campos);
       Tempo.limparCache();
       atualizarListaCorte(view);
     });
@@ -236,17 +232,19 @@ async function atualizarListaCorte(view) {
     btn.addEventListener('click', async () => {
       const pc = await DB.get('plano_corte', btn.dataset.finalizarCorte);
       if (!pc || pc.dataFinalCorte) return;
-      pc.dataFinalCorte = Date.now();
-      pc.status = 'Concluído';
+      const campos = {
+        dataFinalCorte: Date.now(),
+        status: 'Concluído',
+        // igual à atualização pelo formulário: do funcionário fica pendente
+        aprovado: user.tipo === 'admin' ? 'aprovado' : 'pendente',
+        dataAprovacao: user.tipo === 'admin' ? Date.now() : null,
+        atualizadoEm: Date.now(),
+      };
       if (!pc.funcionarioCorteId) {
-        pc.funcionarioCorteId = user.id;
-        pc.funcionarioCorteNome = user.nome;
+        campos.funcionarioCorteId = user.id;
+        campos.funcionarioCorteNome = user.nome;
       }
-      // igual à atualização pelo formulário: do funcionário fica pendente
-      pc.aprovado = user.tipo === 'admin' ? 'aprovado' : 'pendente';
-      pc.dataAprovacao = user.tipo === 'admin' ? Date.now() : null;
-      pc.atualizadoEm = Date.now();
-      await DB.put('plano_corte', pc);
+      await DB.atualizarCampos('plano_corte', pc.id, campos);
       Tempo.limparCache();
       atualizarListaCorte(view);
     });
@@ -256,8 +254,7 @@ async function atualizarListaCorte(view) {
     btn.addEventListener('click', async () => {
       const pc = await DB.get('plano_corte', btn.dataset.desconsiderarTempoCorte);
       if (!pc) return;
-      pc.tempoDesconsiderado = !pc.tempoDesconsiderado;
-      await DB.put('plano_corte', pc);
+      await DB.atualizarCampos('plano_corte', pc.id, { tempoDesconsiderado: !pc.tempoDesconsiderado });
       Tempo.limparCache();
       atualizarListaCorte(view);
     });
