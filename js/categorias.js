@@ -62,6 +62,8 @@ const Categorias = {
     if (!cat) return '';
     if (cat.materialCategoria !== undefined && cat.materialCategoria !== null) return cat.materialCategoria || '';
     if (cat.categoriaCadastro === 'Espuma') return 'Espuma';
+    // Marcenaria: madeira ou outro material (lista todos os materiais)
+    if (cat.vaiParaMarcenaria) return '*';
     const parte = this.laserParteDe(cat);
     if (parte === 'chapa') return 'Chapa';
     if (parte === 'tubo') return 'Tubo';

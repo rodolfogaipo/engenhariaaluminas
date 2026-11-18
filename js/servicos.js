@@ -56,7 +56,7 @@ async function renderServicosLista(view) {
     </div>
 
     <div class="field" style="margin-bottom:20px">
-      <input id="busca-servico" placeholder="Buscar por nome, tipo, funcionário ou material…" value="${escapeHtml(ServicosView.filtroTexto)}" />
+      <input id="busca-servico" placeholder="Buscar por nome, móvel, tipo, funcionário ou material…" value="${escapeHtml(ServicosView.filtroTexto)}" />
     </div>
     <div id="filtros-servicos" style="margin:-4px 0 16px">
     </div>
@@ -153,6 +153,7 @@ async function atualizarListaServicos(view) {
   ]);
   const user = Auth.current;
   const todos = await DB.getAll('servicos');
+  const movelDoServico = moveisDosServicos(todos);
 
   const visiveis =
     user.tipo === 'admin'
@@ -177,6 +178,7 @@ async function atualizarListaServicos(view) {
         Const_normaliza(s.tipo).includes(filtro) ||
         Const_normaliza(s.funcionarioNome).includes(filtro) ||
         Const_normaliza(s.materialNome).includes(filtro) ||
+        Const_normaliza(movelDoServico.get(s.id)).includes(filtro) ||
         Const_normaliza(s.numeroPedido).includes(filtro)
       );
     });
@@ -359,6 +361,7 @@ async function atualizarListaServicos(view) {
               ${checkboxSelecao}
               <div class="row__main" style="flex:1; min-width:0">
               <div class="row__title">${escapeHtml(s.nome)}</div>
+              ${movelDoServico.get(s.id) ? `<div class="row__meta servico-movel">🪑 Móvel: <b>${escapeHtml(movelDoServico.get(s.id))}</b></div>` : ''}
               <div class="row__meta">${escapeHtml(s.tipo)}${acaoLabel} · ${escapeHtml(s.funcionarioNome || 'Disponível')} · ${Const.formatarData(s.criadoEm)}</div>
               ${aguardandoInicioMeta}
               ${s.iniciadoEm ? `<div class="row__meta">Início: ${Const.formatarData(s.iniciadoEm)}</div>` : ''}
@@ -703,7 +706,7 @@ async function renderServicoForm(view) {
   if (ehAdmin) {
     funcionariosCache = await DB.getAll('usuarios'); // inclui o próprio Admin, pra ele poder se atribuir serviços e aparecer em "Minha Produção"
   }
-  const materiaisDisponiveis = tipoMaterial ? (await Materiais.listar()).filter((m) => m.tipo === tipoMaterial) : [];
+  const materiaisDisponiveis = tipoMaterial ? Materiais.filtrarPorTipo(await Materiais.listar(), tipoMaterial) : [];
 
   view.innerHTML = `
     <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px">
@@ -1018,6 +1021,9 @@ function voltarParaLista() {
    material foi usado. */
 
 function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
+  const qualquer = tipoMaterial === '*';
+  const nomeT = qualquer ? 'material' : tipoMaterial;
+  const rotuloCampo = qualquer ? 'Material usado' : `Material usado — ${tipoMaterial}`;
   const st = ServicosView.formState;
   const bloco = document.getElementById('bloco-material');
   if (!bloco) return;
@@ -1027,7 +1033,7 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
     const aindaExiste = !m.id || materiaisDisponiveis.some((x) => x.id === m.id);
     bloco.innerHTML = `
       <div class="field">
-        <label>Material usado — ${escapeHtml(tipoMaterial)}</label>
+        <label>${escapeHtml(rotuloCampo)}</label>
         <div class="card" style="background:var(--brand-100); border-color:var(--brand-500); padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
           <div style="min-width:0; display:flex; align-items:center; gap:10px">
             ${fotoMiniMaterial(materiaisDisponiveis.find((x) => x.id === m.id))}
@@ -1059,8 +1065,8 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
   if (materiaisDisponiveis.length === 0) {
     bloco.innerHTML = `
       <div class="field">
-        <label>Material usado — ${escapeHtml(tipoMaterial)} (opcional)</label>
-        <div class="row__meta">Nenhum ${escapeHtml(tipoMaterial.toLowerCase())} cadastrado ainda. ${
+        <label>${escapeHtml(rotuloCampo)} (opcional)</label>
+        <div class="row__meta">Nenhum ${escapeHtml(nomeT.toLowerCase())} cadastrado ainda. ${
           Auth.isAdmin() ? 'Cadastre na aba Materiais.' : 'Peça ao administrador para cadastrar na aba Materiais.'
         }</div>
       </div>`;
@@ -1069,8 +1075,8 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
 
   bloco.innerHTML = `
     <div class="field">
-      <label for="f-material-busca">Material usado — ${escapeHtml(tipoMaterial)} (opcional)</label>
-      <input id="f-material-busca" value="${escapeHtml(st.materialBusca)}" placeholder="Buscar ${escapeHtml(tipoMaterial.toLowerCase())} pelo nome…" autocomplete="off" />
+      <label for="f-material-busca">${escapeHtml(rotuloCampo)} (opcional)</label>
+      <input id="f-material-busca" value="${escapeHtml(st.materialBusca)}" placeholder="Buscar ${escapeHtml(nomeT.toLowerCase())} pelo nome…" autocomplete="off" />
       <div id="material-resultados" style="margin-top:8px"></div>
     </div>
   `;
@@ -1084,7 +1090,7 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
       .filter((m) => !alvo || normalizaBuscaMaterial(m.nome).includes(alvo) || normalizaBuscaMaterial(m.especificacao).includes(alvo))
       .slice(0, 8);
     if (lista.length === 0) {
-      cont.innerHTML = `<div class="row__meta">Nenhum ${escapeHtml(tipoMaterial.toLowerCase())} com esse nome na lista.</div>`;
+      cont.innerHTML = `<div class="row__meta">Nenhum ${escapeHtml(nomeT.toLowerCase())} com esse nome na lista.</div>`;
       return;
     }
     cont.innerHTML = `
@@ -1096,7 +1102,7 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
             ${fotoMiniMaterial(m)}
             <div class="row__main" style="flex:1">
               <div class="row__title" style="font-size:14px">${escapeHtml(m.nome)}${m.aprovado === 'pendente' ? ' <span class="badge badge--warn">pendente</span>' : ''}</div>
-              <div class="row__meta">${m.especificacao ? `${escapeHtml(m.especificacao)} · ` : ''}Largura: ${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</div>
+              <div class="row__meta">${qualquer ? `${escapeHtml(m.tipo || '')} · ` : ''}${m.especificacao ? `${escapeHtml(m.especificacao)} · ` : ''}${m.largura != null && m.largura !== '' ? `Largura: ${formatarLarguraMaterial(m.largura)}` : ''}</div>
             </div>
             <button class="btn btn--ghost" data-escolher-material="${m.id}" style="padding:6px 12px; font-size:13px">Usar</button>
           </div>`
@@ -1485,7 +1491,7 @@ function aplicarMaterialNoRegistro(registro, st) {
   if (usaMaterial && st.material) {
     registro.materialId = st.material.id || null;
     registro.materialNome = st.material.nome;
-    registro.materialTipo = st.material.tipo || Materiais.tipoDaCategoria(registro.tipo);
+    registro.materialTipo = st.material.tipo || (Materiais.tipoDaCategoria(registro.tipo) === '*' ? null : Materiais.tipoDaCategoria(registro.tipo));
     registro.materialLargura = st.material.largura ?? null;
   } else if (!usaMaterial && st.editId && registro.tipo === st.tipoOriginal) {
     // categoria não pergunta mais o material: guarda o que já estava salvo
@@ -1690,3 +1696,28 @@ async function renderConcluirServico(view) {
   });
 }
 
+
+
+/* Nome do móvel de cada serviço (mesma regra do Ateliê/Marcenaria/Laser:
+   campo Móvel do lançamento ou descoberto pelo nome). Só leitura — não
+   grava nada; guardado em memória enquanto os serviços não mudam. */
+function moveisDosServicos(todos) {
+  let assinatura = todos.length;
+  todos.forEach((s) => (assinatura += (s.atualizadoEm || s.criadoEm || 0) % 100000 + String(s.movel || '').length + String(s.nome || '').length));
+  const c = ServicosView._cacheMoveis;
+  if (c && c.assinatura === assinatura) return c.mapa;
+  const copias = todos.map((s) => ({ id: s.id, nome: s.nome, movel: s.movel }));
+  Atelie.resolverMoveis(copias);
+  const mapa = new Map();
+  copias.forEach((x) => {
+    const m = x._movel;
+    if (!m || m === Atelie.SEM_MOVEL) return;
+    // não repete quando o nome do serviço já é o próprio móvel
+    if (Atelie.chaveMovel(m) === Atelie.chaveMovel(x.nome)) return;
+    // nome com vários móveis (lista do pedido) não ajuda a achar o móvel
+    if (m.length > 60) return;
+    mapa.set(x.id, m);
+  });
+  ServicosView._cacheMoveis = { assinatura, mapa };
+  return mapa;
+}

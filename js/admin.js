@@ -857,7 +857,7 @@ async function renderAdminCategorias(cont, view) {
             ${c.vaiParaAtelie ? '<span class="badge badge--brand">Ateliê</span>' : ''}
             ${c.vaiParaMarcenaria ? '<span class="badge badge--brand">Marcenaria</span>' : ''}
             ${Categorias.laserParteDe(c) ? `<span class="badge badge--brand">Laser · ${Categorias.laserParteDe(c) === 'tubo' ? 'Tubos' : 'Chapas'}</span>` : ''}
-            ${Materiais.tipoDaCategoria(c.nome) ? `<span class="badge badge--idle">Material: ${escapeHtml(Materiais.tipoDaCategoria(c.nome))}</span>` : ''}
+            ${Materiais.tipoDaCategoria(c.nome) ? `<span class="badge badge--idle">Material: ${escapeHtml(Materiais.nomeTipo(Materiais.tipoDaCategoria(c.nome)))}</span>` : ''}
             <span class="badge ${c.temPorcentagem ? 'badge--brand' : 'badge--idle'}">${c.temPorcentagem ? 'Tem %' : 'Sem %'}</span>
             <button class="btn btn--ghost" data-editar-cat="${c.id}" style="padding:6px 12px; font-size:13px">Editar</button>
             <button class="btn btn--danger" data-excluir-cat="${c.id}" data-sistema-cat="${c.sistema ? '1' : ''}" style="padding:6px 12px; font-size:13px">Excluir</button>
@@ -963,9 +963,10 @@ async function renderFormCategoria(cont, view) {
         <label for="f-cat-material">Material usado nos lançamentos dessa categoria</label>
         <select id="f-cat-material">
           <option value="" ${!st.materialCategoria ? 'selected' : ''}>Nenhum (não pergunta o material)</option>
+          <option value="*" ${st.materialCategoria === '*' ? 'selected' : ''}>Qualquer material (mostra a lista toda)</option>
           ${catsMaterial.map((n) => `<option value="${escapeHtml(n)}" ${st.materialCategoria === n ? 'selected' : ''}>${escapeHtml(n)}</option>`).join('')}
         </select>
-        <div class="row__meta" style="margin-top:6px">Ao lançar um serviço dessa categoria aparece o campo pra escolher o material (cadastrado na aba Materiais). Ex: Cadastro Espuma → Espuma, Laser Chapas → Chapa, Laser Tubos → Tubo.</div>
+        <div class="row__meta" style="margin-top:6px">Ao lançar um serviço dessa categoria aparece o campo pra escolher o material (cadastrado na aba Materiais). Ex: Cadastro Espuma → Espuma, Laser Chapas → Chapa, Laser Tubos → Tubo, Marcenaria → Qualquer material. É sempre opcional.</div>
       </div>
 
       <div style="display:flex; gap:10px">
@@ -982,7 +983,15 @@ async function renderFormCategoria(cont, view) {
   document.getElementById('f-cat-nome-adm').addEventListener('input', (ev) => (st.nome = ev.target.value));
   document.getElementById('f-cat-porcentagem').addEventListener('change', (ev) => (st.temPorcentagem = ev.target.checked));
   document.getElementById('f-cat-atelie').addEventListener('change', (ev) => (st.vaiParaAtelie = ev.target.checked));
-  document.getElementById('f-cat-marcenaria').addEventListener('change', (ev) => (st.vaiParaMarcenaria = ev.target.checked));
+  document.getElementById('f-cat-marcenaria').addEventListener('change', (ev) => {
+    st.vaiParaMarcenaria = ev.target.checked;
+    // marcenaria: sugere "Qualquer material" (madeira, MDF…) — dá pra trocar
+    if (st.vaiParaMarcenaria && !st.materialCategoria) {
+      st.materialCategoria = '*';
+      const sel = document.getElementById('f-cat-material');
+      if (sel) sel.value = '*';
+    }
+  });
   document.getElementById('f-cat-laser').addEventListener('change', (ev) => {
     const antes = st.laserParte;
     st.laserParte = ev.target.value;

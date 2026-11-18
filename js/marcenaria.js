@@ -25,6 +25,8 @@ const MarcenariaView = {
   porMovel: false, // "Ver por móvel"
   abertos: new Set(), // móveis com as peças abertas
   editandoMovel: null, // móvel com o "mudar todas" aberto
+  materialPecaId: null, // peça com o "Material" aberto
+  _materiais: [],
 };
 
 const Marcenaria = {
@@ -270,6 +272,8 @@ async function renderMarcenaria(view) {
   const st = MarcenariaView;
   const ehAdmin = Auth.isAdmin();
   const [itens, nomesCats] = await Promise.all([Marcenaria.itens(), Marcenaria.nomesCategorias()]);
+  await Materiais.listarCategorias();
+  st._materiais = await Materiais.listar();
 
   const conta = { afazer: 0, feito: 0, producao: 0, todos: itens.length };
   itens.forEach((s) => conta[s._situacao]++);
@@ -475,10 +479,38 @@ function ligarAcoesMarcenaria(listaEl, view, filtrados, redesenhar) {
   const st = MarcenariaView;
   ligarCaixinhasPdf(listaEl, MarcenariaView, () => renderMarcenaria(view));
 
+  listaEl.querySelectorAll('[data-marcenaria-material]').forEach((b) =>
+    b.addEventListener('click', () => {
+      st.materialPecaId = b.dataset.marcenariaMaterial;
+      st.editandoId = null;
+      st.editandoMovel = null;
+      redesenhar();
+    })
+  );
+  const edMat = listaEl.querySelector('.marcenaria-editor--mat');
+  if (edMat) {
+    edMat.querySelector('#marc-mat-cancelar').addEventListener('click', () => {
+      st.materialPecaId = null;
+      redesenhar();
+    });
+    const btnMat = edMat.querySelector('#marc-mat-salvar');
+    if (btnMat)
+      btnMat.addEventListener('click', async () => {
+        const s = filtrados.find((x) => x.id === st.materialPecaId);
+        if (!s) return;
+        const { lista } = materiaisParaServico(s.tipo, st._materiais, '*');
+        btnMat.disabled = true;
+        btnMat.textContent = 'Salvando…';
+        await salvarMaterialServicos([s.id], materialDoSeletor(edMat.querySelector('#marc-mat-sel').value, lista));
+        st.materialPecaId = null;
+        renderMarcenaria(view);
+      });
+  }
   listaEl.querySelectorAll('[data-marcenaria-alterar]').forEach((b) =>
     b.addEventListener('click', () => {
       const s = filtrados.find((x) => x.id === b.dataset.marcenariaAlterar);
       if (!s) return;
+      st.materialPecaId = null;
       st.editandoId = s.id;
       st.editor = { status: s._situacao, obs: s.marcenariaObs || '' };
       st.editandoMovel = null;
@@ -757,6 +789,8 @@ function itemMarcenariaHtml(s, ehAdmin) {
   const ped = s.marcenariaSolicitacao;
   const editando = st.editandoId === s.id;
   const souEuQuePedi = ped && ped.porId === Auth.current.id;
+  const { tipoMat, lista: listaMat } = materiaisParaServico(s.tipo, st._materiais, '*');
+  const editandoMat = st.materialPecaId === s.id;
 
   return `
     <div class="row marcenaria-item ${ped ? 'marcenaria-item--pedido' : ''}" style="padding:14px 18px; flex-wrap:wrap; align-items:flex-start; gap:10px">
@@ -768,6 +802,23 @@ function itemMarcenariaHtml(s, ehAdmin) {
           s.dataFinal ? ` · concluído ${Const.formatarData(s.dataFinal)}` : ''
         }</div>
         ${s.observacoes ? `<div class="row__meta" style="font-style:italic">📝 ${escapeHtml(s.observacoes)}</div>` : ''}
+        ${linhaMaterialPeca(s, tipoMat)}
+        ${
+          editandoMat
+            ? `<div class="marcenaria-editor marcenaria-editor--mat">
+                <div class="row__meta" style="margin-bottom:6px">Madeira / material desta peça (opcional, vale na hora):</div>
+                ${
+                  listaMat.length
+                    ? seletorMaterialHtml('id="marc-mat-sel"', listaMat, s.materialId, s.materialNome)
+                    : '<div class="row__meta">Nenhum material cadastrado — cadastre na aba Materiais (categoria Madeira, Chapa…).</div>'
+                }
+                <div style="display:flex; gap:8px; margin-top:10px">
+                  <button class="btn btn--ghost" id="marc-mat-cancelar" style="padding:8px 14px; font-size:13px">Cancelar</button>
+                  ${listaMat.length ? '<button class="btn btn--primary" id="marc-mat-salvar" style="padding:8px 14px; font-size:13px">Salvar material</button>' : ''}
+                </div>
+              </div>`
+            : ''
+        }
         ${
           !MarcenariaView.porMovel
             ? `<div class="row__meta">Móvel: ${s._movel ? `<b>${escapeHtml(s._movel)}</b>${s.movel ? ' (informado no lançamento)' : ''}` : '<b style="color:var(--warn-fg)">não identificado</b>'}</div>`
@@ -827,6 +878,7 @@ function itemMarcenariaHtml(s, ehAdmin) {
           ? ''
           : `<div style="display:flex; gap:6px; flex:0 0 auto; flex-wrap:wrap">
               <button class="btn btn--ghost" data-marcenaria-alterar="${s.id}" style="padding:6px 12px; font-size:13px">${ehAdmin ? 'Mudar situação' : ped && souEuQuePedi ? 'Refazer pedido' : 'Pedir mudança'}</button>
+              ${editandoMat ? '' : `<button class="btn btn--ghost" data-marcenaria-material="${s.id}" style="padding:6px 12px; font-size:13px">Material</button>`}
               ${
                 ehAdmin
                   ? `<button class="btn btn--ghost" data-marcenaria-editar="${s.id}" style="padding:6px 12px; font-size:13px">Editar</button>

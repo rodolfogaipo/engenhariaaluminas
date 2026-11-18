@@ -130,10 +130,12 @@ const Materiais = {
       if (escolhido) return escolhido;
       if (catServ.materialCategoria === '') return null; // Admin escolheu "Nenhum"
     }
-    // 2) "Corte X" usa a categoria de material X
+    // 2) "Corte X" usa a categoria de material X; "Teste …" também
+    //    (Teste Corte Espuma → Espuma; sem material no nome → qualquer um)
     const n = normalizaBuscaMaterial(nomeCategoria);
-    if (!n.startsWith('corte')) return null;
-    const resto = ' ' + n.slice('corte'.length).trim() + ' ';
+    const ehTeste = n.startsWith('teste');
+    if (!n.startsWith('corte') && !ehTeste) return null;
+    const resto = ' ' + (ehTeste ? n : n.slice('corte'.length).trim()) + ' ';
     const nomes = (categorias || this._cacheCategorias || this.CATEGORIAS_PADRAO).map((c) => (typeof c === 'string' ? c : c.nome));
     // o nome mais comprido primeiro (ex: "Tecido Técnico" antes de "Tecido")
     const ordenados = [...nomes].sort((a, b) => b.length - a.length);
@@ -141,7 +143,27 @@ const Materiais = {
       const alvo = normalizaBuscaMaterial(nome);
       return alvo && resto.includes(' ' + alvo + ' ');
     });
-    return achado || null;
+    return achado || (ehTeste ? '*' : null);
+  },
+
+  /* '*' = qualquer material (todas as categorias de Materiais) */
+  TODOS: '*',
+  filtrarPorTipo(lista, tipo) {
+    if (!tipo) return [];
+    if (tipo === '*') {
+      // madeira, chapa e tubo primeiro (o que mais se usa na marcenaria/laser)
+      const ordem = (t) => {
+        const i = ['Madeira', 'Chapa', 'Tubo', 'Espuma'].indexOf(t);
+        return i === -1 ? 99 : i;
+      };
+      return [...lista].sort(
+        (a, b) => ordem(a.tipo) - ordem(b.tipo) || (a.tipo || '').localeCompare(b.tipo || '', 'pt-BR') || (a.nome || '').localeCompare(b.nome || '', 'pt-BR')
+      );
+    }
+    return lista.filter((m) => m.tipo === tipo);
+  },
+  nomeTipo(tipo) {
+    return tipo === '*' ? 'Qualquer material' : tipo || '';
   },
 
   /* "Sempre será o mesmo": material da última peça com o MESMO nome e a
@@ -153,7 +175,7 @@ const Materiais = {
     let melhor = null;
     servicos.forEach((s) => {
       if (!s.materialNome || s.tipo !== tipoServico) return;
-      if (tipoMaterial && s.materialTipo && s.materialTipo !== tipoMaterial) return;
+      if (tipoMaterial && tipoMaterial !== '*' && s.materialTipo && s.materialTipo !== tipoMaterial) return;
       if (normalizaBuscaMaterial(s.nome).replace(/\s+/g, ' ') !== alvo) return;
       const quando = s.materialMarcadoEm || s.criadoEm || 0;
       if (!melhor || quando > melhor.quando) melhor = { s, quando };
@@ -166,7 +188,7 @@ const Materiais = {
   /* Os materiais de uma categoria, com o rótulo pra lista de escolha */
   async daCategoria(tipoMaterial) {
     if (!tipoMaterial) return [];
-    return (await this.listar()).filter((m) => m.tipo === tipoMaterial);
+    return this.filtrarPorTipo(await this.listar(), tipoMaterial);
   },
 
   rotulo(m) {
@@ -921,7 +943,7 @@ window.Materiais = Materiais;
 function materiaisParaServico(tipoServico, todos, reserva) {
   const tipoMat = Materiais.tipoDaCategoria(tipoServico) || reserva || null;
   if (!tipoMat) return { tipoMat: null, lista: [] };
-  return { tipoMat, lista: (todos || []).filter((m) => m.tipo === tipoMat) };
+  return { tipoMat, lista: Materiais.filtrarPorTipo(todos || [], tipoMat) };
 }
 
 function seletorMaterialHtml(atributo, lista, atualId, atualNome, opcaoManter) {
@@ -929,12 +951,19 @@ function seletorMaterialHtml(atributo, lista, atualId, atualNome, opcaoManter) {
   return `<select ${atributo} class="sel-material">
     ${opcaoManter ? `<option value="__manter__" selected>${escapeHtml(opcaoManter)}</option>` : ''}
     <option value="" ${!opcaoManter && !atualNome ? 'selected' : ''}>— sem material —</option>
-    ${lista
-      .map(
-        (m) =>
-          `<option value="${escapeHtml(m.id)}" ${!opcaoManter && m.id === atualId ? 'selected' : ''}>${escapeHtml(Materiais.rotulo(m))}${m.aprovado === 'pendente' ? ' (pendente)' : ''}</option>`
-      )
-      .join('')}
+    ${(() => {
+      const opcao = (m) =>
+        `<option value="${escapeHtml(m.id)}" ${!opcaoManter && m.id === atualId ? 'selected' : ''}>${escapeHtml(Materiais.rotulo(m))}${
+          m.aprovado === 'pendente' ? ' (pendente)' : ''
+        }</option>`;
+      const tipos = [];
+      lista.forEach((m) => tipos.includes(m.tipo || '') || tipos.push(m.tipo || ''));
+      if (tipos.length <= 1) return lista.map(opcao).join('');
+      // vários tipos (qualquer material): separados por grupo
+      return tipos
+        .map((t) => `<optgroup label="${escapeHtml(t || 'Outros')}">${lista.filter((m) => (m.tipo || '') === t).map(opcao).join('')}</optgroup>`)
+        .join('');
+    })()}
     ${!opcaoManter && atualNome && !temNaLista ? `<option value="__atual__" selected>${escapeHtml(atualNome)} (fora da lista)</option>` : ''}
   </select>`;
 }
@@ -966,7 +995,7 @@ async function salvarMaterialServicos(ids, material) {
 
 function linhaMaterialPeca(s, tipoMat) {
   if (!tipoMat && !s.materialNome) return '';
-  return `<div class="row__meta">🔩 ${escapeHtml(tipoMat || s.materialTipo || 'Material')}: ${
+  return `<div class="row__meta">🔩 ${escapeHtml(tipoMat && tipoMat !== '*' ? tipoMat : s.materialTipo || 'Material')}: ${
     s.materialNome ? `<b>${escapeHtml(s.materialNome)}</b>` : '<b style="color:var(--warn-fg)">não informado</b>'
   }</div>`;
 }

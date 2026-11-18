@@ -101,8 +101,9 @@ const Atelie = {
   aPartirDoTipoDeMovel(texto) {
     const norm = texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
     let melhor = -1;
-    this.TIPOS_MOVEL.forEach((t) => {
-      const m = new RegExp(`(^|[^A-Z])${t}([^A-Z]|$)`).exec(norm);
+    if (!this._reTipos) this._reTipos = this.TIPOS_MOVEL.map((t) => new RegExp(`(^|[^A-Z])${t}([^A-Z]|$)`));
+    this._reTipos.forEach((re) => {
+      const m = re.exec(norm);
       if (m) {
         const pos = m.index + m[1].length;
         if (melhor === -1 || pos < melhor) melhor = pos;
@@ -122,6 +123,15 @@ const Atelie = {
 
   movelDe(nome) {
     const original = String(nome || '').trim();
+    if (!this._memoMovel) this._memoMovel = new Map();
+    if (this._memoMovel.has(original)) return this._memoMovel.get(original);
+    const r = this._movelDeCalc(original);
+    if (this._memoMovel.size > 20000) this._memoMovel.clear();
+    this._memoMovel.set(original, r);
+    return r;
+  },
+
+  _movelDeCalc(original) {
     const re = /\d+(?:[.,]\d+)?\s*[xX×]\s*\d+(?:[.,]\d+)?(?:\s*[xX×]\s*\d+(?:[.,]\d+)?)*(?:\s*[a-zA-Z]{1,2}(?=[\s\-–—:,.;)]|$))?/;
     const m = re.exec(original);
     if (m) {
@@ -184,6 +194,7 @@ const Atelie = {
       const k = this.chaveMovel(b.movel);
       if (!fortes.has(k)) fortes.set(k, { nome: b.movel, palavras: new Set(this.palavras(b.movel)) });
     });
+    let indice = null;
     brutos.forEach((b) => {
       if (b.semMovel) {
         b.s._movel = null;
@@ -198,7 +209,13 @@ const Atelie = {
         b.s._movel = null;
         return;
       }
-      const candidatos = Array.from(fortes.values()).filter((f) => resto.every((t) => f.palavras.has(t)));
+      // índice palavra → móveis (rápido com milhares de serviços)
+      if (!indice) {
+        indice = new Map();
+        fortes.forEach((f) => f.palavras.forEach((t) => (indice.has(t) ? indice.get(t).push(f) : indice.set(t, [f]))));
+      }
+      const base = resto.map((t) => indice.get(t) || []).sort((x, y) => x.length - y.length)[0];
+      const candidatos = base.filter((f) => resto.every((t) => f.palavras.has(t)));
       if (candidatos.length === 1) b.s._movel = candidatos[0].nome;
       else if (candidatos.length > 1) b.s._movel = null;
       else b.s._movel = b.movel;
