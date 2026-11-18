@@ -24,8 +24,13 @@ const AtelieView = {
   abertos: new Set(), // móveis com as peças abertas
   editandoMovel: null, // móvel com o "mudar todas" aberto
   materialPecaId: null, // peça com o "Material" aberto (ex: espuma)
+  categoria: '', // '' = todas; senão só uma categoria (Espuma, Tecido…)
   _materiais: [],
 };
+
+try {
+  AtelieView.categoria = localStorage.getItem('atelie_categoria') || '';
+} catch (e) {}
 
 const Atelie = {
   SITUACOES: {
@@ -251,9 +256,15 @@ const Atelie = {
 async function renderAtelie(view) {
   const st = AtelieView;
   const ehAdmin = Auth.isAdmin();
-  const [itens, nomesCats] = await Promise.all([Atelie.itens(), Atelie.nomesCategorias()]);
+  const [todosItens, nomesCats] = await Promise.all([Atelie.itens(), Atelie.nomesCategorias()]);
   await Materiais.listarCategorias();
   st._materiais = await Materiais.listar();
+  // separado por categoria (Espuma, Tecido, Tela…) pra consultar cada uma
+  if (st.categoria && !nomesCats.has(st.categoria)) st.categoria = '';
+  const contaCat = {};
+  todosItens.forEach((s) => (contaCat[s.tipo] = (contaCat[s.tipo] || 0) + 1));
+  const itens = st.categoria ? todosItens.filter((s) => s.tipo === st.categoria) : todosItens;
+  const rotuloCat = (n) => n.replace(/^cadastro\s+/i, '');
 
   const conta = { esperando: 0, aprovado: 0, reprovado: 0, todos: itens.length };
   itens.forEach((s) => conta[s._situacao]++);
@@ -291,7 +302,7 @@ async function renderAtelie(view) {
   view.innerHTML = `
     <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap">
       <div>
-        <h2 class="section-title" style="margin-bottom:2px">Ateliê</h2>
+        <h2 class="section-title" style="margin-bottom:2px">Ateliê${st.categoria ? ` — ${escapeHtml(rotuloCat(st.categoria))}` : ''}</h2>
         <p class="section-sub" style="margin:0">${
           ehAdmin
             ? 'Cadastros das categorias marcadas "Vai para o Ateliê" — a situação que você marca vale na hora'
@@ -317,6 +328,16 @@ async function renderAtelie(view) {
           </div>`
         : ''
     }
+    <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap">
+      <button class="btn ${!st.categoria ? 'btn--primary' : 'btn--ghost'}" data-atelie-cat="">Tudo <small>(${todosItens.length})</small></button>
+      ${Array.from(nomesCats)
+        .sort((a, b) => (contaCat[b] || 0) - (contaCat[a] || 0) || a.localeCompare(b, 'pt-BR'))
+        .map(
+          (n) =>
+            `<button class="btn ${st.categoria === n ? 'btn--primary' : 'btn--ghost'}" data-atelie-cat="${escapeHtml(n)}">${escapeHtml(rotuloCat(n))} <small>(${contaCat[n] || 0})</small></button>`
+        )
+        .join('')}
+    </div>
     <div class="chips" style="margin-bottom:12px">
       ${[
         ['esperando', 'Esperando'],
@@ -354,6 +375,19 @@ async function renderAtelie(view) {
       renderAtelie(view);
     });
   }
+  view.querySelectorAll('[data-atelie-cat]').forEach((b) =>
+    b.addEventListener('click', () => {
+      st.categoria = b.dataset.atelieCat;
+      st.editandoId = null;
+      st.editandoMovel = null;
+      st.materialPecaId = null;
+      st.selecionados.clear();
+      try {
+        localStorage.setItem('atelie_categoria', st.categoria);
+      } catch (e) {}
+      renderAtelie(view);
+    })
+  );
   view.querySelectorAll('[data-atelie-modo]').forEach((b) =>
     b.addEventListener('click', () => {
       st.porMovel = b.dataset.atelieModo === 'movel';
@@ -954,7 +988,7 @@ async function montarPdfAtelie(itens) {
     },
   ];
   return montarPdfPadrao(blocos, {
-    titulo: 'Ateliê',
+    titulo: `Ateliê${AtelieView.categoria ? ` — ${AtelieView.categoria.replace(/^cadastro\s+/i, '')}` : ''}`,
     periodo: `${ordenados.length} item${ordenados.length === 1 ? '' : 'ns'}`,
     detalhes: 'Situação dos cadastros na conferência do ateliê',
   });
@@ -989,7 +1023,7 @@ async function montarPdfAtelieMoveis(itens) {
     });
   });
   return montarPdfPadrao(blocos, {
-    titulo: moveis.length === 1 ? `Ateliê — ${moveis[0].nome}` : 'Ateliê — por móvel',
+    titulo: `Ateliê${AtelieView.categoria ? ` ${AtelieView.categoria.replace(/^cadastro\s+/i, '')}` : ''} — ${moveis.length === 1 ? moveis[0].nome : 'por móvel'}`,
     periodo: `${moveis.length} móve${moveis.length === 1 ? 'l' : 'is'} · ${itens.length} peça${itens.length === 1 ? '' : 's'}`,
     detalhes: 'Peças de cada móvel e a situação na conferência do ateliê',
   });
