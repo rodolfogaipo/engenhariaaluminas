@@ -28,6 +28,7 @@ const Exportar = {
     { chave: 'atelie', titulo: 'Situação no ateliê', tipo: 'texto', largura: 16 },
     { chave: 'atelieObs', titulo: 'Obs. do ateliê', tipo: 'texto', largura: 28 },
     { chave: 'marcenaria', titulo: 'Situação na marcenaria', tipo: 'texto', largura: 18 },
+    { chave: 'laser', titulo: 'Situação no laser', tipo: 'texto', largura: 18 },
     { chave: 'origem', titulo: 'Origem', tipo: 'texto', largura: 12 },
   ],
 
@@ -54,6 +55,7 @@ const Exportar = {
       atelie: i.atelie || '',
       atelieObs: i.atelieObs || '',
       marcenaria: i.marcenaria || '',
+      laser: i.laser || '',
       origem: i.origem === 'corte' ? 'Aba Corte' : 'Serviços',
     }));
   },

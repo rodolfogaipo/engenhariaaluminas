@@ -23,6 +23,8 @@ const AtelieView = {
   porMovel: false, // "Ver por móvel"
   abertos: new Set(), // móveis com as peças abertas
   editandoMovel: null, // móvel com o "mudar todas" aberto
+  materialPecaId: null, // peça com o "Material" aberto (ex: espuma)
+  _materiais: [],
 };
 
 const Atelie = {
@@ -250,6 +252,8 @@ async function renderAtelie(view) {
   const st = AtelieView;
   const ehAdmin = Auth.isAdmin();
   const [itens, nomesCats] = await Promise.all([Atelie.itens(), Atelie.nomesCategorias()]);
+  await Materiais.listarCategorias();
+  st._materiais = await Materiais.listar();
 
   const conta = { esperando: 0, aprovado: 0, reprovado: 0, todos: itens.length };
   itens.forEach((s) => conta[s._situacao]++);
@@ -270,7 +274,8 @@ async function renderAtelie(view) {
       Analise.normaliza(s.tipo).includes(alvo) ||
       Analise.normaliza(s.funcionarioNome).includes(alvo) ||
       Analise.normaliza(s.observacoes).includes(alvo) ||
-      Analise.normaliza(s.atelieObs).includes(alvo)
+      Analise.normaliza(s.atelieObs).includes(alvo) ||
+      Analise.normaliza(s.materialNome).includes(alvo)
     );
   });
   const filtrados = FiltrosLista.aplicar(filtradosBase, 'atelie', {
@@ -433,11 +438,39 @@ function ligarAcoesAtelie(listaEl, view, filtrados, redesenhar) {
   const st = AtelieView;
   ligarCaixinhasPdf(listaEl, AtelieView, () => renderAtelie(view));
 
+  listaEl.querySelectorAll('[data-atelie-material]').forEach((b) =>
+    b.addEventListener('click', () => {
+      st.materialPecaId = b.dataset.atelieMaterial;
+      st.editandoId = null;
+      st.editandoMovel = null;
+      redesenhar();
+    })
+  );
+  const edMat = listaEl.querySelector('.atelie-editor--mat');
+  if (edMat) {
+    edMat.querySelector('#atelie-mat-cancelar').addEventListener('click', () => {
+      st.materialPecaId = null;
+      redesenhar();
+    });
+    const btnMat = edMat.querySelector('#atelie-mat-salvar');
+    if (btnMat)
+      btnMat.addEventListener('click', async () => {
+        const s = filtrados.find((x) => x.id === st.materialPecaId);
+        if (!s) return;
+        const { lista } = materiaisParaServico(s.tipo, st._materiais);
+        btnMat.disabled = true;
+        btnMat.textContent = 'Salvando…';
+        await salvarMaterialServicos([s.id], materialDoSeletor(edMat.querySelector('#atelie-mat-sel').value, lista));
+        st.materialPecaId = null;
+        renderAtelie(view);
+      });
+  }
   listaEl.querySelectorAll('[data-atelie-alterar]').forEach((b) =>
     b.addEventListener('click', () => {
       const s = filtrados.find((x) => x.id === b.dataset.atelieAlterar);
       if (!s) return;
       st.editandoId = s.id;
+      st.materialPecaId = null;
       st.editor = { status: s._situacao, obs: s.atelieObs || '' };
       st.editandoMovel = null;
       redesenhar();
@@ -587,10 +620,19 @@ function desenharMoveisAtelie(view, filtrados) {
                       : `Pedir mudança para as <b>${g.pecas.length}</b> peça(s) mostradas deste móvel (vale depois que o Admin autorizar):`
                   }</div>
                   <div class="chips" style="margin-bottom:10px">
+                    <button class="chip ${st.editor && st.editor.status === '__manter__' ? 'chip--on' : ''}" data-atelie-st-movel="__manter__">Manter a de cada peça</button>
                     ${Object.entries(Atelie.SITUACOES)
                       .map(([v, o]) => `<button class="chip ${st.editor && st.editor.status === v ? 'chip--on' : ''}" data-atelie-st-movel="${v}">${o.rotulo}</button>`)
                       .join('')}
                   </div>
+                  ${gruposMaterialMovel(g.pecas)
+                    .map(
+                      (gm, i) => `<div class="field" style="margin-bottom:10px">
+                        <label>Material — ${escapeHtml(gm.tipoMat)}: aplicar nas ${gm.ids.length} peça(s) que usam ${escapeHtml(gm.tipoMat.toLowerCase())} (vale na hora)</label>
+                        ${seletorMaterialHtml(`data-atelie-mat-movel="${i}"`, gm.lista, null, null, 'Manter o de cada peça')}
+                      </div>`
+                    )
+                    .join('')}
                   <div class="field" style="margin-bottom:10px">
                     <input id="atelie-obs-movel" value="${escapeHtml((st.editor && st.editor.obs) || '')}" placeholder="Observação do ateliê pra todas (opcional) — deixe vazio pra manter a de cada peça" />
                   </div>
@@ -637,9 +679,8 @@ function desenharMoveisAtelie(view, filtrados) {
       if (!g) return;
       st.editandoMovel = g.chave;
       st.editandoId = null;
-      // sugere a situação que a maioria das peças já tem
-      const maioria = Object.entries(g.conta).sort((a, c) => c[1] - a[1])[0][0];
-      st.editor = { status: maioria, obs: '' };
+      st.editor = { status: '__manter__', obs: '' };
+      st.materialPecaId = null;
       redesenhar();
     })
   );
@@ -663,11 +704,18 @@ function desenharMoveisAtelie(view, filtrados) {
       const btn = document.getElementById('atelie-salvar-movel');
       btn.disabled = true;
       btn.textContent = 'Salvando…';
-      await salvarSituacaoAtelieVarias(
-        g.pecas.map((p) => p.id),
-        st.editor.status,
-        st.editor.obs
-      );
+      const grupos = gruposMaterialMovel(g.pecas);
+      for (const sel of document.querySelectorAll('[data-atelie-mat-movel]')) {
+        const gm = grupos[Number(sel.dataset.atelieMatMovel)];
+        if (gm) await salvarMaterialServicos(gm.ids, materialDoSeletor(sel.value, gm.lista));
+      }
+      if (st.editor.status !== '__manter__' || (st.editor.obs || '').trim()) {
+        await salvarSituacaoAtelieVarias(
+          g.pecas.map((p) => p.id),
+          st.editor.status,
+          st.editor.obs
+        );
+      }
       st.editandoMovel = null;
       renderAtelie(view);
     });
@@ -677,12 +725,27 @@ function desenharMoveisAtelie(view, filtrados) {
 }
 
 // "Mudar todas": mesma regra de uma peça (Admin vale na hora; os outros viram pedido)
-async function salvarSituacaoAtelieVarias(ids, status, obs) {
+// peças de um móvel agrupadas pelo material que usam (Espuma, Tela…)
+function gruposMaterialMovel(pecas) {
+  const mapa = new Map();
+  pecas.forEach((p) => {
+    const { tipoMat, lista } = materiaisParaServico(p.tipo, AtelieView._materiais);
+    if (!tipoMat) return;
+    if (!mapa.has(tipoMat)) mapa.set(tipoMat, { tipoMat, lista, ids: [] });
+    mapa.get(tipoMat).ids.push(p.id);
+  });
+  return Array.from(mapa.values()).filter((g) => g.lista.length);
+}
+
+async function salvarSituacaoAtelieVarias(ids, statusPedido, obs) {
   const obsLimpa = (obs || '').trim();
   const agora = Date.now();
   const registros = (await Promise.all(ids.map((id) => DB.get('servicos', id)))).filter(Boolean);
+  const inicio = await Atelie.inicio();
   registros.forEach((s) => {
     const obsFinal = obsLimpa || s.atelieObs || '';
+    // "Manter a de cada peça" (só muda a observação)
+    const status = statusPedido === '__manter__' ? Atelie.situacao(s, inicio) : statusPedido;
     if (Auth.isAdmin()) {
       s.atelieStatus = status;
       s.atelieObs = obsFinal;
@@ -710,6 +773,8 @@ function itemAtelieHtml(s, ehAdmin) {
   const ped = s.atelieSolicitacao;
   const editando = st.editandoId === s.id;
   const souEuQuePedi = ped && ped.porId === Auth.current.id;
+  const { tipoMat, lista: listaMat } = materiaisParaServico(s.tipo, st._materiais);
+  const editandoMat = st.materialPecaId === s.id;
 
   return `
     <div class="row atelie-item ${ped ? 'atelie-item--pedido' : ''}" style="padding:14px 18px; flex-wrap:wrap; align-items:flex-start; gap:10px">
@@ -720,6 +785,23 @@ function itemAtelieHtml(s, ehAdmin) {
           s.dataFinal ? ` · concluído ${Const.formatarData(s.dataFinal)}` : ''
         }</div>
         ${s.observacoes ? `<div class="row__meta" style="font-style:italic">📝 ${escapeHtml(s.observacoes)}</div>` : ''}
+        ${linhaMaterialPeca(s, tipoMat)}
+        ${
+          editandoMat
+            ? `<div class="atelie-editor atelie-editor--mat">
+                <div class="row__meta" style="margin-bottom:6px">Material desta peça — ${escapeHtml(tipoMat || '')} (vale na hora):</div>
+                ${
+                  listaMat.length
+                    ? seletorMaterialHtml('id="atelie-mat-sel"', listaMat, s.materialId, s.materialNome)
+                    : `<div class="row__meta">Nenhum material "${escapeHtml(tipoMat || '')}" cadastrado — cadastre na aba Materiais.</div>`
+                }
+                <div style="display:flex; gap:8px; margin-top:10px">
+                  <button class="btn btn--ghost" id="atelie-mat-cancelar" style="padding:8px 14px; font-size:13px">Cancelar</button>
+                  ${listaMat.length ? '<button class="btn btn--primary" id="atelie-mat-salvar" style="padding:8px 14px; font-size:13px">Salvar material</button>' : ''}
+                </div>
+              </div>`
+            : ''
+        }
         ${
           !AtelieView.porMovel
             ? `<div class="row__meta">Móvel: ${s._movel ? `<b>${escapeHtml(s._movel)}</b>${s.movel ? ' (informado no lançamento)' : ''}` : '<b style="color:var(--warn-fg)">não identificado</b>'}</div>`
@@ -779,6 +861,7 @@ function itemAtelieHtml(s, ehAdmin) {
           ? ''
           : `<div style="display:flex; gap:6px; flex:0 0 auto; flex-wrap:wrap">
               <button class="btn btn--ghost" data-atelie-alterar="${s.id}" style="padding:6px 12px; font-size:13px">${ehAdmin ? 'Mudar situação' : ped && souEuQuePedi ? 'Refazer pedido' : 'Pedir mudança'}</button>
+              ${tipoMat && !editandoMat ? `<button class="btn btn--ghost" data-atelie-material="${s.id}" style="padding:6px 12px; font-size:13px">Material</button>` : ''}
               ${
                 ehAdmin
                   ? `<button class="btn btn--ghost" data-atelie-editar="${s.id}" style="padding:6px 12px; font-size:13px">Editar</button>

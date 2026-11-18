@@ -143,7 +143,14 @@ async function atualizarListaServicos(view) {
   // tempo gasto em cada serviço — só o Admin vê
   const tempos = Auth.isAdmin() ? await Tempo.calcular() : null;
   // categorias que vão pro Ateliê (etiqueta com a situação em cada serviço)
-  const [catsAtelie, inicioAtelie, catsMarc, inicioMarc] = await Promise.all([Atelie.nomesCategorias(), Atelie.inicio(), Marcenaria.nomesCategorias(), Marcenaria.inicio()]);
+  const [catsAtelie, inicioAtelie, catsMarc, inicioMarc, partesLaser, inicioLaser] = await Promise.all([
+    Atelie.nomesCategorias(),
+    Atelie.inicio(),
+    Marcenaria.nomesCategorias(),
+    Marcenaria.inicio(),
+    Laser.partesPorCategoria(),
+    Laser.inicio(),
+  ]);
   const user = Auth.current;
   const todos = await DB.getAll('servicos');
 
@@ -392,6 +399,7 @@ async function atualizarListaServicos(view) {
               ${statusBadge}
               ${seloAtelie}
               ${catsMarc.has(s.tipo) ? `${Marcenaria.selo(Marcenaria.situacao(s, inicioMarc), 'Marcenaria: ')}${s.marcenariaSolicitacao ? ' <span class="badge badge--warn">pedido de mudança</span>' : ''}` : ''}
+              ${partesLaser.has(s.tipo) ? `${Laser.selo(Laser.situacao(s, inicioLaser), `Laser ${partesLaser.get(s.tipo) === 'tubo' ? 'tubo' : 'chapa'}: `)}${s.laserSolicitacao ? ' <span class="badge badge--warn">pedido de mudança</span>' : ''}` : ''}
               ${estadoServico(s) !== 'concluido' && s.dataProgramada ? FiltrosLista.seloPrazo(s.dataProgramada) : ''}
               ${disponivelBadge}
               ${emAndamentoBadge}
@@ -685,9 +693,11 @@ async function renderServicoForm(view) {
   await Materiais.listarCategorias(); // categorias de material são livres (aba Materiais)
   const tipoMaterial = Materiais.tipoDaCategoria(st.tipo);
   const catAtual = categoriasCache.find((c) => c.nome === st.tipo);
-  const vaiParaAtelie = !!(catAtual && (catAtual.vaiParaAtelie || catAtual.vaiParaMarcenaria));
+  const vaiParaAtelie = !!(catAtual && (catAtual.vaiParaAtelie || catAtual.vaiParaMarcenaria || Categorias.laserParteDe(catAtual)));
   const moveisConhecidos = vaiParaAtelie
-    ? Array.from(new Set([...(await Atelie.nomesMoveis()), ...(await Marcenaria.nomesMoveis())])).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }))
+    ? Array.from(new Set([...(await Atelie.nomesMoveis()), ...(await Marcenaria.nomesMoveis()), ...(await Laser.nomesMoveis())])).sort((a, b) =>
+        a.localeCompare(b, 'pt-BR', { numeric: true })
+      )
     : [];
   const ehAdmin = Auth.isAdmin();
   if (ehAdmin) {
@@ -726,7 +736,7 @@ async function renderServicoForm(view) {
       ${
         vaiParaAtelie
           ? `<div class="field">
-              <label for="f-movel">Móvel (opcional — pro Ateliê/Marcenaria juntar as peças certas)</label>
+              <label for="f-movel">Móvel (opcional — pro Ateliê/Marcenaria/Laser juntar as peças certas)</label>
               <input id="f-movel" list="lista-moveis-atelie" value="${escapeHtml(st.movel || '')}" placeholder="Ex: POLTRONA CHLÔE — comece a digitar pra ver os que já existem" autocomplete="off" />
               <datalist id="lista-moveis-atelie">
                 ${moveisConhecidos.map((m) => `<option value="${escapeHtml(m)}"></option>`).join('')}
@@ -915,7 +925,32 @@ async function renderServicoForm(view) {
   renderBlocoNome(view, ehCadastro);
   const movelInput = document.getElementById('f-movel');
   if (movelInput) movelInput.addEventListener('input', () => (st.movel = movelInput.value));
-  if (tipoMaterial) renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis);
+  if (tipoMaterial) {
+    renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis);
+    // mesma peça = mesmo material: ao digitar o nome, puxa o material da
+    // última peça igual (só em lançamento novo, e só se ninguém escolheu)
+    if (!editando) {
+      const aplicarLembrado = async () => {
+        const f = ServicosView.formState;
+        if (!f || f !== st || (st.material && !st.material.lembrado)) return;
+        const lemb = await Materiais.lembrado(st.tipo, st.catalogoNome || st.nomeLivre, tipoMaterial);
+        const atualId = st.material ? st.material.id : null;
+        const novoId = lemb ? lemb.id : null;
+        if (atualId === novoId && !!st.material === !!lemb) return;
+        st.material = lemb;
+        renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis);
+      };
+      ['f-nome', 'f-cat-nome'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el)
+          el.addEventListener('input', () => {
+            clearTimeout(ServicosView._tMatLemb);
+            ServicosView._tMatLemb = setTimeout(aplicarLembrado, 500);
+          });
+      });
+      aplicarLembrado();
+    }
+  }
 
   document.getElementById('btn-salvar-servico').addEventListener('click', () => salvarServicoComTratamentoDeErro(view));
 }
@@ -992,7 +1027,7 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
     const aindaExiste = !m.id || materiaisDisponiveis.some((x) => x.id === m.id);
     bloco.innerHTML = `
       <div class="field">
-        <label>${escapeHtml(tipoMaterial)} usado</label>
+        <label>Material usado — ${escapeHtml(tipoMaterial)}</label>
         <div class="card" style="background:var(--brand-100); border-color:var(--brand-500); padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
           <div style="min-width:0; display:flex; align-items:center; gap:10px">
             ${fotoMiniMaterial(materiaisDisponiveis.find((x) => x.id === m.id))}
@@ -1000,7 +1035,11 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
             <div class="row__title" style="color:var(--brand-800)">${escapeHtml(m.nome)}${
               (materiaisDisponiveis.find((x) => x.id === m.id) || m).aprovado === 'pendente' || m.pendente ? ' <span class="badge badge--warn">pendente</span>' : ''
             }</div>
-            <div class="row__meta">Largura: <b>${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</b>${aindaExiste ? '' : ' · não está mais na lista de Materiais'}</div>
+            <div class="row__meta">${(() => {
+              const cad = materiaisDisponiveis.find((x) => x.id === m.id);
+              return cad && cad.especificacao ? `<b>${escapeHtml(cad.especificacao)}</b> · ` : '';
+            })()}${m.largura != null && m.largura !== '' ? `Largura: <b>${formatarLarguraMaterial(m.largura)}</b>` : ''}${aindaExiste ? '' : ' · não está mais na lista de Materiais'}</div>
+            ${m.lembrado ? '<div class="row__meta" style="color:var(--brand-800)">↺ Mesmo material da última peça com esse nome — toque em Trocar se for outro.</div>' : ''}
             </div>
           </div>
           <button class="btn btn--ghost" id="btn-trocar-material" style="padding:6px 12px; font-size:13px">Trocar</button>
@@ -1020,7 +1059,7 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
   if (materiaisDisponiveis.length === 0) {
     bloco.innerHTML = `
       <div class="field">
-        <label>${escapeHtml(tipoMaterial)} usado (opcional)</label>
+        <label>Material usado — ${escapeHtml(tipoMaterial)} (opcional)</label>
         <div class="row__meta">Nenhum ${escapeHtml(tipoMaterial.toLowerCase())} cadastrado ainda. ${
           Auth.isAdmin() ? 'Cadastre na aba Materiais.' : 'Peça ao administrador para cadastrar na aba Materiais.'
         }</div>
@@ -1030,7 +1069,7 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
 
   bloco.innerHTML = `
     <div class="field">
-      <label for="f-material-busca">${escapeHtml(tipoMaterial)} usado (opcional)</label>
+      <label for="f-material-busca">Material usado — ${escapeHtml(tipoMaterial)} (opcional)</label>
       <input id="f-material-busca" value="${escapeHtml(st.materialBusca)}" placeholder="Buscar ${escapeHtml(tipoMaterial.toLowerCase())} pelo nome…" autocomplete="off" />
       <div id="material-resultados" style="margin-top:8px"></div>
     </div>
@@ -1041,7 +1080,9 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
     const cont = document.getElementById('material-resultados');
     if (!cont) return;
     const alvo = normalizaBuscaMaterial(st.materialBusca);
-    const lista = materiaisDisponiveis.filter((m) => !alvo || normalizaBuscaMaterial(m.nome).includes(alvo)).slice(0, 8);
+    const lista = materiaisDisponiveis
+      .filter((m) => !alvo || normalizaBuscaMaterial(m.nome).includes(alvo) || normalizaBuscaMaterial(m.especificacao).includes(alvo))
+      .slice(0, 8);
     if (lista.length === 0) {
       cont.innerHTML = `<div class="row__meta">Nenhum ${escapeHtml(tipoMaterial.toLowerCase())} com esse nome na lista.</div>`;
       return;
@@ -1055,7 +1096,7 @@ function renderBlocoMaterial(view, tipoMaterial, materiaisDisponiveis) {
             ${fotoMiniMaterial(m)}
             <div class="row__main" style="flex:1">
               <div class="row__title" style="font-size:14px">${escapeHtml(m.nome)}${m.aprovado === 'pendente' ? ' <span class="badge badge--warn">pendente</span>' : ''}</div>
-              <div class="row__meta">Largura: ${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</div>
+              <div class="row__meta">${m.especificacao ? `${escapeHtml(m.especificacao)} · ` : ''}Largura: ${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</div>
             </div>
             <button class="btn btn--ghost" data-escolher-material="${m.id}" style="padding:6px 12px; font-size:13px">Usar</button>
           </div>`
@@ -1436,7 +1477,7 @@ async function atualizarSugestaoTempo() {
 function aplicarMovelNoRegistro(registro, st) {
   const cat = categoriasCache.find((c) => c.nome === registro.tipo);
   const m = String(st.movel || '').trim();
-  registro.movel = cat && (cat.vaiParaAtelie || cat.vaiParaMarcenaria) && m ? m : null;
+  registro.movel = cat && (cat.vaiParaAtelie || cat.vaiParaMarcenaria || Categorias.laserParteDe(cat)) && m ? m : null;
 }
 
 function aplicarMaterialNoRegistro(registro, st) {
@@ -1446,6 +1487,8 @@ function aplicarMaterialNoRegistro(registro, st) {
     registro.materialNome = st.material.nome;
     registro.materialTipo = st.material.tipo || Materiais.tipoDaCategoria(registro.tipo);
     registro.materialLargura = st.material.largura ?? null;
+  } else if (!usaMaterial && st.editId && registro.tipo === st.tipoOriginal) {
+    // categoria não pergunta mais o material: guarda o que já estava salvo
   } else {
     registro.materialId = null;
     registro.materialNome = null;

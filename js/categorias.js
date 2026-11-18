@@ -30,12 +30,42 @@ const Categorias = {
     { nome: 'Serviço Interno', temPorcentagem: false, categoriaCadastro: null },
   ],
 
+  // cópia em memória (pra quem precisa responder na hora, sem esperar o banco)
+  _cache: null,
+
   async listar() {
     let itens = await DB.getAll('categorias_servico');
     if (itens.length === 0) {
       itens = await this.semear();
     }
-    return itens.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    itens.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    this._cache = itens;
+    return itens;
+  },
+
+  /* Laser: em que parte a categoria entra — 'chapa', 'tubo' ou '' (não vai).
+     Categoria que nunca foi configurada: "Cadastro Chapas" (catálogo Chapa)
+     entra em Chapas e "Cadastro Tubo" (catálogo Tubo) em Tubos. */
+  laserParteDe(cat) {
+    if (!cat) return '';
+    if (cat.laserParte !== undefined && cat.laserParte !== null) return cat.laserParte || '';
+    if (cat.categoriaCadastro === 'Chapa') return 'chapa';
+    if (cat.categoriaCadastro === 'Tubo') return 'tubo';
+    return '';
+  },
+
+  /* Categoria de MATERIAL (aba Materiais) usada nos lançamentos desta
+     categoria de serviço — ex: "Cadastro Espuma" usa Espuma. '' = nenhuma.
+     Categoria nunca configurada: Cadastro Espuma → Espuma, e as do Laser
+     → Chapa / Tubo. */
+  materialDe(cat) {
+    if (!cat) return '';
+    if (cat.materialCategoria !== undefined && cat.materialCategoria !== null) return cat.materialCategoria || '';
+    if (cat.categoriaCadastro === 'Espuma') return 'Espuma';
+    const parte = this.laserParteDe(cat);
+    if (parte === 'chapa') return 'Chapa';
+    if (parte === 'tubo') return 'Tubo';
+    return '';
   },
 
   async semear() {
@@ -65,7 +95,7 @@ const Categorias = {
     return c ? c.categoriaCadastro : null;
   },
 
-  async criar(nome, temPorcentagem, vaiParaAtelie, vaiParaMarcenaria) {
+  async criar(nome, temPorcentagem, vaiParaAtelie, vaiParaMarcenaria, extras = {}) {
     nome = (nome || '').trim();
     if (!nome) throw new Error('Digite o nome da categoria.');
     const itens = await DB.getAll('categorias_servico');
@@ -78,6 +108,8 @@ const Categorias = {
       temPorcentagem: !!temPorcentagem,
       vaiParaAtelie: !!vaiParaAtelie,
       vaiParaMarcenaria: !!vaiParaMarcenaria,
+      laserParte: extras.laserParte || '',
+      materialCategoria: extras.materialCategoria || '',
       categoriaCadastro: null,
       sistema: false,
       criadoEm: Date.now(),
@@ -86,7 +118,7 @@ const Categorias = {
     return registro;
   },
 
-  async atualizar(id, { nome, temPorcentagem, vaiParaAtelie, vaiParaMarcenaria }) {
+  async atualizar(id, { nome, temPorcentagem, vaiParaAtelie, vaiParaMarcenaria, laserParte, materialCategoria }) {
     let nomeAntigo = null;
     const cat = await DB.get('categorias_servico', id);
     if (!cat) throw new Error('Categoria não encontrada.');
@@ -111,6 +143,8 @@ const Categorias = {
     cat.temPorcentagem = !!temPorcentagem;
     if (vaiParaAtelie !== undefined) cat.vaiParaAtelie = !!vaiParaAtelie;
     if (vaiParaMarcenaria !== undefined) cat.vaiParaMarcenaria = !!vaiParaMarcenaria;
+    if (laserParte !== undefined) cat.laserParte = laserParte || '';
+    if (materialCategoria !== undefined) cat.materialCategoria = materialCategoria || '';
     await DB.put('categorias_servico', cat);
 
     // os serviços guardam o NOME da categoria — leva o nome novo pra

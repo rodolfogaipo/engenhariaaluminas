@@ -25,6 +25,7 @@ const Permissoes = {
     { id: 'materiais', label: 'Materiais' },
     { id: 'atelie', label: 'Ateliê' },
     { id: 'marcenaria', label: 'Marcenaria' },
+    { id: 'laser', label: 'Laser' },
     { id: 'raiox', label: 'Raio-X' },
   ],
 

@@ -46,10 +46,41 @@ const Materiais = {
       await DB.putMany('categorias_material', cats);
       await DB.put('config', { chave: 'categorias_material_semeadas', valor: agora });
     }
+    // v89: Espuma, Madeira, Chapa e Tubo (pra escolher nos cadastros do
+    // Ateliê, Marcenaria e Laser). Só cria as que faltam, uma vez só.
+    if (Auth.isAdmin() && !this._extrasConferido) {
+      this._extrasConferido = true;
+      try {
+        const feito = await DB.get('config', 'categorias_material_v89');
+        if (!feito) {
+          const noServidor = await DB.getAllAtualizado('categorias_material');
+          const tem = new Set(noServidor.map((c) => normalizaBuscaMaterial(c.nome)));
+          const agora = Date.now();
+          const novas = this.CATEGORIAS_EXTRAS.filter((c) => !tem.has(normalizaBuscaMaterial(c.nome))).map((c) => ({
+            ...c,
+            criadoEm: agora,
+            aprovado: 'aprovado',
+            dataAprovacao: agora,
+          }));
+          if (novas.length) await DB.putMany('categorias_material', novas);
+          await DB.put('config', { chave: 'categorias_material_v89', valor: agora });
+          cats = await DB.getAll('categorias_material');
+        }
+      } catch (e) {
+        console.warn('Não consegui criar as categorias de material novas:', e);
+      }
+    }
     cats.sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'));
     this._cacheCategorias = cats;
     return cats;
   },
+
+  CATEGORIAS_EXTRAS: [
+    { id: 'catmat-espuma', nome: 'Espuma' },
+    { id: 'catmat-madeira', nome: 'Madeira' },
+    { id: 'catmat-chapa', nome: 'Chapa' },
+    { id: 'catmat-tubo', nome: 'Tubo' },
+  ],
 
   // Quem tem a aba Materiais pode cadastrar material e categoria.
   // O que não é do Admin entra "pendente" até o Admin aprovar — mas já
@@ -92,6 +123,14 @@ const Materiais = {
   // Tecido, "Corte Espuma" usa Espuma (se existir a categoria Espuma),
   // e assim por diante. "Teste Corte Tecido" não entra.
   tipoDaCategoria(nomeCategoria, categorias) {
+    // 1) a categoria de serviço diz qual material usa (Admin → Categorias)
+    const catServ = typeof Categorias !== 'undefined' && Categorias._cache ? Categorias.encontrar(Categorias._cache, nomeCategoria) : null;
+    if (catServ) {
+      const escolhido = Categorias.materialDe(catServ);
+      if (escolhido) return escolhido;
+      if (catServ.materialCategoria === '') return null; // Admin escolheu "Nenhum"
+    }
+    // 2) "Corte X" usa a categoria de material X
     const n = normalizaBuscaMaterial(nomeCategoria);
     if (!n.startsWith('corte')) return null;
     const resto = ' ' + n.slice('corte'.length).trim() + ' ';
@@ -105,10 +144,36 @@ const Materiais = {
     return achado || null;
   },
 
+  /* "Sempre será o mesmo": material da última peça com o MESMO nome e a
+     mesma categoria (o que foi lançado por último vale). */
+  async lembrado(tipoServico, nomePeca, tipoMaterial) {
+    const alvo = normalizaBuscaMaterial(nomePeca).replace(/\s+/g, ' ');
+    if (!alvo || alvo.length < 3) return null;
+    const servicos = await DB.getAll('servicos');
+    let melhor = null;
+    servicos.forEach((s) => {
+      if (!s.materialNome || s.tipo !== tipoServico) return;
+      if (tipoMaterial && s.materialTipo && s.materialTipo !== tipoMaterial) return;
+      if (normalizaBuscaMaterial(s.nome).replace(/\s+/g, ' ') !== alvo) return;
+      const quando = s.materialMarcadoEm || s.criadoEm || 0;
+      if (!melhor || quando > melhor.quando) melhor = { s, quando };
+    });
+    if (!melhor) return null;
+    const s = melhor.s;
+    return { id: s.materialId || null, nome: s.materialNome, tipo: s.materialTipo || tipoMaterial, largura: s.materialLargura ?? null, lembrado: true };
+  },
+
+  /* Os materiais de uma categoria, com o rótulo pra lista de escolha */
+  async daCategoria(tipoMaterial) {
+    if (!tipoMaterial) return [];
+    return (await this.listar()).filter((m) => m.tipo === tipoMaterial);
+  },
+
   rotulo(m) {
     if (!m) return '';
+    const esp = m.especificacao ? ` — ${m.especificacao}` : '';
     const larg = m.largura != null && m.largura !== '' ? ` — ${formatarLarguraMaterial(m.largura)}` : '';
-    return `${m.nome}${larg}`;
+    return `${m.nome}${esp}${larg}`;
   },
 };
 
@@ -148,8 +213,8 @@ async function renderMateriaisLista(view) {
         <h2 class="section-title" style="margin-bottom:2px">Materiais</h2>
         <p class="section-sub" style="margin:0">${
           Auth.isAdmin()
-            ? 'Materiais com a largura, pra escolher no lançamento de corte'
-            : 'Materiais com a largura. O que você cadastrar fica pendente até o Admin aprovar, mas já pode ser usado no lançamento.'
+            ? 'Tecido, tela, espuma, madeira, chapas, tubos… pra escolher no lançamento (corte, Ateliê, Marcenaria e Laser)'
+            : 'Materiais pra escolher no lançamento. O que você cadastrar fica pendente até o Admin aprovar, mas já pode ser usado.'
         }</p>
       </div>
       ${
@@ -204,6 +269,7 @@ async function renderMateriaisLista(view) {
         nome: '',
         tipo: MateriaisView.filtroTipo || Materiais.nomesCategorias()[0] || '',
         largura: '',
+        especificacao: '',
         observacao: '',
         erro: '',
         imagens: [],
@@ -256,7 +322,7 @@ async function atualizarListaMateriais(view) {
     if (MateriaisView.soPendentes && Auth.isAdmin() && !Materiais.ehPendente(m)) return false;
     if (MateriaisView.filtroTipo && m.tipo !== MateriaisView.filtroTipo) return false;
     if (!filtro) return true;
-    return normalizaBuscaMaterial(m.nome).includes(filtro) || normalizaBuscaMaterial(m.observacao).includes(filtro);
+    return normalizaBuscaMaterial(m.nome).includes(filtro) || normalizaBuscaMaterial(m.especificacao).includes(filtro) || normalizaBuscaMaterial(m.observacao).includes(filtro);
   });
   const filtrados = FiltrosLista.aplicar(filtradosBase, 'materiais', {
     func: (m) => m.criadoPorId,
@@ -312,7 +378,7 @@ async function atualizarListaMateriais(view) {
           ${caixinhaPdf(MateriaisView, m.id)}
           <div class="row__main" style="flex:1 1 200px">
             <div class="row__title">${escapeHtml(m.nome)}${Materiais.seloPendente(m)}</div>
-            <div class="row__meta">${escapeHtml(m.tipo || '—')} · Largura: <b>${m.largura != null && m.largura !== '' ? formatarLarguraMaterial(m.largura) : '—'}</b>${usos[m.id] ? ` · usado em ${usos[m.id]} serviço(s)` : ''}</div>
+            <div class="row__meta">${escapeHtml(m.tipo || '—')}${m.especificacao ? ` · <b>${escapeHtml(m.especificacao)}</b>` : ''}${m.largura != null && m.largura !== '' ? ` · Largura: <b>${formatarLarguraMaterial(m.largura)}</b>` : ''}${usos[m.id] ? ` · usado em ${usos[m.id]} serviço(s)` : ''}</div>
             ${m.observacao ? `<div class="row__meta" style="font-style:italic">${escapeHtml(m.observacao)}</div>` : ''}
             ${(m.imagens || []).length ? `<div style="margin-top:8px">${miniaturasMaterial(m.imagens, 56)}</div>` : ''}
           </div>
@@ -363,6 +429,7 @@ async function atualizarListaMateriais(view) {
         nome: m.nome || '',
         tipo: m.tipo || 'Tecido',
         largura: m.largura != null ? String(m.largura) : '',
+        especificacao: m.especificacao || '',
         observacao: m.observacao || '',
         erro: '',
         imagens: m.imagens ? [...m.imagens] : [],
@@ -422,7 +489,11 @@ function renderMaterialForm(view) {
         <input id="f-mat-nome" value="${escapeHtml(st.nome)}" placeholder="Ex: LINHO BEGE 2045" autocomplete="off" />
       </div>
       <div class="field">
-        <label for="f-mat-largura">Largura (cm)</label>
+        <label for="f-mat-esp">Medida / especificação (opcional)</label>
+        <input id="f-mat-esp" value="${escapeHtml(st.especificacao || '')}" placeholder="Ex: chapa 2 mm · tubo 25x25 #1,2 · espuma D33 · MDF 15 mm" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="f-mat-largura">Largura (cm, opcional)</label>
         <input id="f-mat-largura" type="number" min="0" step="0.1" inputmode="decimal" value="${escapeHtml(st.largura)}" placeholder="Ex: 140" />
       </div>
       <div class="field">
@@ -459,6 +530,7 @@ function renderMaterialForm(view) {
   document.getElementById('f-mat-nome').addEventListener('input', (ev) => (st.nome = ev.target.value));
   document.getElementById('f-mat-largura').addEventListener('input', (ev) => (st.largura = ev.target.value));
   document.getElementById('f-mat-obs').addEventListener('input', (ev) => (st.observacao = ev.target.value));
+  document.getElementById('f-mat-esp').addEventListener('input', (ev) => (st.especificacao = ev.target.value));
 
   const imagensInput = document.getElementById('f-mat-imagens');
   if (imagensInput) {
@@ -529,6 +601,7 @@ function renderMaterialForm(view) {
           registro.tipo = st.tipo;
           registro.largura = largura;
           registro.observacao = (st.observacao || '').trim();
+          registro.especificacao = (st.especificacao || '').trim();
           if (Auth.isAdmin()) registro.imagens = st.imagens || [];
           registro.atualizadoEm = Date.now();
           await DB.put('materiais', registro);
@@ -839,3 +912,61 @@ function renderListaImagensMaterial(view) {
 }
 
 window.Materiais = Materiais;
+
+/* ---------------- MATERIAL DA PEÇA (Ateliê / Laser) ----------------
+   Escolher o material direto na peça, sem abrir o lançamento. Grava
+   só os campos do material no serviço (não regrava o resto). */
+
+// lista de materiais pra uma categoria de serviço (ex: "Cadastro Espuma" → Espuma)
+function materiaisParaServico(tipoServico, todos, reserva) {
+  const tipoMat = Materiais.tipoDaCategoria(tipoServico) || reserva || null;
+  if (!tipoMat) return { tipoMat: null, lista: [] };
+  return { tipoMat, lista: (todos || []).filter((m) => m.tipo === tipoMat) };
+}
+
+function seletorMaterialHtml(atributo, lista, atualId, atualNome, opcaoManter) {
+  const temNaLista = atualId && lista.some((m) => m.id === atualId);
+  return `<select ${atributo} class="sel-material">
+    ${opcaoManter ? `<option value="__manter__" selected>${escapeHtml(opcaoManter)}</option>` : ''}
+    <option value="" ${!opcaoManter && !atualNome ? 'selected' : ''}>— sem material —</option>
+    ${lista
+      .map(
+        (m) =>
+          `<option value="${escapeHtml(m.id)}" ${!opcaoManter && m.id === atualId ? 'selected' : ''}>${escapeHtml(Materiais.rotulo(m))}${m.aprovado === 'pendente' ? ' (pendente)' : ''}</option>`
+      )
+      .join('')}
+    ${!opcaoManter && atualNome && !temNaLista ? `<option value="__atual__" selected>${escapeHtml(atualNome)} (fora da lista)</option>` : ''}
+  </select>`;
+}
+
+// valor do seletor → material (null = tirar) ou undefined (não mexer)
+function materialDoSeletor(valor, lista) {
+  if (valor === '__manter__' || valor === '__atual__') return undefined;
+  if (!valor) return null;
+  return lista.find((m) => m.id === valor) || undefined;
+}
+
+async function salvarMaterialServicos(ids, material) {
+  if (material === undefined || !ids.length) return;
+  const campos = material
+    ? {
+        materialId: material.id,
+        materialNome: material.nome,
+        materialTipo: material.tipo || null,
+        materialLargura: material.largura ?? null,
+      }
+    : { materialId: null, materialNome: null, materialTipo: null, materialLargura: null };
+  campos.materialMarcadoPorNome = Auth.current.nome;
+  campos.materialMarcadoEm = Date.now();
+  await DB.atualizarCamposEmLote(
+    'servicos',
+    ids.map((id) => ({ id, campos }))
+  );
+}
+
+function linhaMaterialPeca(s, tipoMat) {
+  if (!tipoMat && !s.materialNome) return '';
+  return `<div class="row__meta">🔩 ${escapeHtml(tipoMat || s.materialTipo || 'Material')}: ${
+    s.materialNome ? `<b>${escapeHtml(s.materialNome)}</b>` : '<b style="color:var(--warn-fg)">não informado</b>'
+  }</div>`;
+}

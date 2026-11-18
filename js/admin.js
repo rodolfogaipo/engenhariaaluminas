@@ -88,6 +88,11 @@ async function renderAdminMais(cont) {
                   : ''
               }
               ${
+                pendencias.laser > 0
+                  ? `<div class="row__meta">✴️ <b>${pendencias.laser}</b> pedido(s) de mudança aguardando — Laser</div>`
+                  : ''
+              }
+              ${
                 pendencias.atelie > 0
                   ? `<div class="row__meta">🧵 <b>${pendencias.atelie}</b> pedido(s) de mudança no Ateliê aguardando autorização — Ateliê</div>`
                   : ''
@@ -822,6 +827,8 @@ const AdminCategoriasView = {
   temPorcentagem: false,
   vaiParaAtelie: false,
   vaiParaMarcenaria: false,
+  laserParte: '', // '' | 'chapa' | 'tubo'
+  materialCategoria: '', // categoria de material (aba Materiais) usada no lançamento
   erro: '',
 };
 
@@ -831,6 +838,7 @@ async function renderAdminCategorias(cont, view) {
   }
 
   const categorias = await Categorias.listar();
+  await Materiais.listarCategorias();
 
   cont.innerHTML = `
     <div style="display:flex; justify-content:flex-end; margin-bottom:14px">
@@ -848,6 +856,8 @@ async function renderAdminCategorias(cont, view) {
           <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto">
             ${c.vaiParaAtelie ? '<span class="badge badge--brand">Ateliê</span>' : ''}
             ${c.vaiParaMarcenaria ? '<span class="badge badge--brand">Marcenaria</span>' : ''}
+            ${Categorias.laserParteDe(c) ? `<span class="badge badge--brand">Laser · ${Categorias.laserParteDe(c) === 'tubo' ? 'Tubos' : 'Chapas'}</span>` : ''}
+            ${Materiais.tipoDaCategoria(c.nome) ? `<span class="badge badge--idle">Material: ${escapeHtml(Materiais.tipoDaCategoria(c.nome))}</span>` : ''}
             <span class="badge ${c.temPorcentagem ? 'badge--brand' : 'badge--idle'}">${c.temPorcentagem ? 'Tem %' : 'Sem %'}</span>
             <button class="btn btn--ghost" data-editar-cat="${c.id}" style="padding:6px 12px; font-size:13px">Editar</button>
             <button class="btn btn--danger" data-excluir-cat="${c.id}" data-sistema-cat="${c.sistema ? '1' : ''}" style="padding:6px 12px; font-size:13px">Excluir</button>
@@ -866,6 +876,8 @@ async function renderAdminCategorias(cont, view) {
     AdminCategoriasView.temPorcentagem = false;
     AdminCategoriasView.vaiParaAtelie = false;
     AdminCategoriasView.vaiParaMarcenaria = false;
+    AdminCategoriasView.laserParte = '';
+    AdminCategoriasView.materialCategoria = '';
     AdminCategoriasView.erro = '';
     renderAdminCategorias(cont, view);
   });
@@ -881,6 +893,8 @@ async function renderAdminCategorias(cont, view) {
       AdminCategoriasView.temPorcentagem = !!cat.temPorcentagem;
       AdminCategoriasView.vaiParaAtelie = !!cat.vaiParaAtelie;
       AdminCategoriasView.vaiParaMarcenaria = !!cat.vaiParaMarcenaria;
+      AdminCategoriasView.laserParte = Categorias.laserParteDe(cat);
+      AdminCategoriasView.materialCategoria = Materiais.tipoDaCategoria(cat.nome) || '';
       AdminCategoriasView.erro = '';
       renderAdminCategorias(cont, view);
     });
@@ -903,9 +917,11 @@ async function renderAdminCategorias(cont, view) {
   });
 }
 
-function renderFormCategoria(cont, view) {
+async function renderFormCategoria(cont, view) {
   const st = AdminCategoriasView;
   const editando = !!st.editId;
+  const catsMaterial = (await Materiais.listarCategorias()).map((c) => c.nome);
+  if (st.materialCategoria && !catsMaterial.includes(st.materialCategoria)) catsMaterial.push(st.materialCategoria);
 
   cont.innerHTML = `
     <div class="card">
@@ -934,6 +950,24 @@ function renderFormCategoria(cont, view) {
         Vai para a Marcenaria (as peças dessa categoria aparecem na aba Marcenaria; com "% de Aproveitamento" marcado vira plano de corte de chapa)
       </label>
 
+      <div class="field">
+        <label for="f-cat-laser">Vai para o Laser?</label>
+        <select id="f-cat-laser">
+          <option value="" ${!st.laserParte ? 'selected' : ''}>Não vai para o Laser</option>
+          <option value="chapa" ${st.laserParte === 'chapa' ? 'selected' : ''}>Sim — parte de CHAPAS</option>
+          <option value="tubo" ${st.laserParte === 'tubo' ? 'selected' : ''}>Sim — parte de TUBOS</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="f-cat-material">Material usado nos lançamentos dessa categoria</label>
+        <select id="f-cat-material">
+          <option value="" ${!st.materialCategoria ? 'selected' : ''}>Nenhum (não pergunta o material)</option>
+          ${catsMaterial.map((n) => `<option value="${escapeHtml(n)}" ${st.materialCategoria === n ? 'selected' : ''}>${escapeHtml(n)}</option>`).join('')}
+        </select>
+        <div class="row__meta" style="margin-top:6px">Ao lançar um serviço dessa categoria aparece o campo pra escolher o material (cadastrado na aba Materiais). Ex: Cadastro Espuma → Espuma, Laser Chapas → Chapa, Laser Tubos → Tubo.</div>
+      </div>
+
       <div style="display:flex; gap:10px">
         <button class="btn btn--ghost" id="btn-cancelar-categoria" style="flex:1">Cancelar</button>
         <button class="btn btn--primary" id="btn-salvar-categoria" style="flex:2">Salvar</button>
@@ -949,6 +983,18 @@ function renderFormCategoria(cont, view) {
   document.getElementById('f-cat-porcentagem').addEventListener('change', (ev) => (st.temPorcentagem = ev.target.checked));
   document.getElementById('f-cat-atelie').addEventListener('change', (ev) => (st.vaiParaAtelie = ev.target.checked));
   document.getElementById('f-cat-marcenaria').addEventListener('change', (ev) => (st.vaiParaMarcenaria = ev.target.checked));
+  document.getElementById('f-cat-laser').addEventListener('change', (ev) => {
+    const antes = st.laserParte;
+    st.laserParte = ev.target.value;
+    // sugere o material da parte do Laser (dá pra trocar)
+    const sug = { chapa: 'Chapa', tubo: 'Tubo' };
+    if (st.laserParte && (!st.materialCategoria || st.materialCategoria === sug[antes])) {
+      st.materialCategoria = sug[st.laserParte];
+      const sel = document.getElementById('f-cat-material');
+      if (sel && [...sel.options].some((o) => o.value === st.materialCategoria)) sel.value = st.materialCategoria;
+    }
+  });
+  document.getElementById('f-cat-material').addEventListener('change', (ev) => (st.materialCategoria = ev.target.value));
 
   document.getElementById('btn-salvar-categoria').addEventListener('click', async () => {
     const btn = document.getElementById('btn-salvar-categoria');
@@ -960,9 +1006,19 @@ function renderFormCategoria(cont, view) {
       await comTimeout(
         (async () => {
           if (editando) {
-            await Categorias.atualizar(st.editId, { nome: st.nome, temPorcentagem: st.temPorcentagem, vaiParaAtelie: st.vaiParaAtelie, vaiParaMarcenaria: st.vaiParaMarcenaria });
+            await Categorias.atualizar(st.editId, {
+              nome: st.nome,
+              temPorcentagem: st.temPorcentagem,
+              vaiParaAtelie: st.vaiParaAtelie,
+              vaiParaMarcenaria: st.vaiParaMarcenaria,
+              laserParte: st.laserParte,
+              materialCategoria: st.materialCategoria,
+            });
           } else {
-            await Categorias.criar(st.nome, st.temPorcentagem, st.vaiParaAtelie, st.vaiParaMarcenaria);
+            await Categorias.criar(st.nome, st.temPorcentagem, st.vaiParaAtelie, st.vaiParaMarcenaria, {
+              laserParte: st.laserParte,
+              materialCategoria: st.materialCategoria,
+            });
           }
           st.formAberto = false;
           renderAdminCategorias(cont, view);
@@ -999,8 +1055,9 @@ async function contarPendencias() {
     materiais: materiais.filter((m) => m.aprovado === 'pendente').length + categoriasMat.filter((c) => c.aprovado === 'pendente').length,
     atelie: servicos.filter((s) => s.atelieSolicitacao).length,
     marcenaria: servicos.filter((s) => s.marcenariaSolicitacao).length + gabaritos.filter((g) => g.aprovado === 'pendente').length,
+    laser: servicos.filter((s) => s.laserSolicitacao).length,
   };
-  pendencias.total = pendencias.servicos + pendencias.conclusoes + pendencias.planoCorte + pendencias.mkt + pendencias.materiais + pendencias.atelie + pendencias.marcenaria;
+  pendencias.total = pendencias.servicos + pendencias.conclusoes + pendencias.planoCorte + pendencias.mkt + pendencias.materiais + pendencias.atelie + pendencias.marcenaria + pendencias.laser;
   return pendencias;
 }
 

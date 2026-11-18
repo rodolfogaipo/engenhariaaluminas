@@ -26,6 +26,7 @@ const Analise = {
       Atelie.inicio(),
     ]);
     const [catsMarc, inicioMarc] = await Promise.all([Marcenaria.nomesCategorias(), Marcenaria.inicio()]);
+    const [partesLaser, inicioLaser] = await Promise.all([Laser.partesPorCategoria(), Laser.inicio()]);
     const itens = [];
 
     servicos.forEach((s) => {
@@ -50,6 +51,9 @@ const Analise = {
         atelie: catsAtelie.has(s.tipo) ? Atelie.rotulo(Atelie.situacao(s, inicioAtelie)) : '',
         atelieObs: catsAtelie.has(s.tipo) ? s.atelieObs || '' : '',
         marcenaria: catsMarc.has(s.tipo) ? Marcenaria.rotulo(Marcenaria.situacao(s, inicioMarc)) : '',
+        laser: partesLaser.has(s.tipo)
+          ? `${partesLaser.get(s.tipo) === 'tubo' ? 'Tubo' : 'Chapa'} · ${Laser.rotulo(Laser.situacao(s, inicioLaser))}`
+          : '',
       });
     });
 
