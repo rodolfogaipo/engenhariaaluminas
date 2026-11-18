@@ -165,6 +165,7 @@ async function renderMateriaisLista(view) {
 
     <div class="field" style="margin-bottom:12px">
       <input id="busca-material" placeholder="Buscar material pelo nome…" value="${escapeHtml(MateriaisView.filtroTexto)}" />
+      ${FiltrosLista.html('materiais', { ordens: ['az', 'za', 'recentes', 'antigos'], funcionarios: null, rotuloData: 'Cadastro' })}
     </div>
     <div class="chips" style="margin-bottom:18px">
       <button class="chip ${!MateriaisView.filtroTipo ? 'chip--on' : ''}" data-filtro-tipo="">Todos</button>
@@ -183,6 +184,7 @@ async function renderMateriaisLista(view) {
     <div id="materiais-previa"></div>
   `;
 
+  FiltrosLista.ligar(view, 'materiais', () => renderMateriaisLista(view));
   document.getElementById('btn-selecao-materiais').addEventListener('click', () => {
     MateriaisView.modoSelecao = !MateriaisView.modoSelecao;
     if (!MateriaisView.modoSelecao) MateriaisView.selecionados.clear();
@@ -250,11 +252,18 @@ async function atualizarListaMateriais(view) {
   const catsPendentes = (await DB.getAll('categorias_material')).filter((c) => c.aprovado === 'pendente').length;
   const contaPend = document.getElementById('conta-pendente-mat');
   if (contaPend) contaPend.textContent = todos.filter((m) => Materiais.ehPendente(m)).length + catsPendentes;
-  const filtrados = todos.filter((m) => {
+  const filtradosBase = todos.filter((m) => {
     if (MateriaisView.soPendentes && Auth.isAdmin() && !Materiais.ehPendente(m)) return false;
     if (MateriaisView.filtroTipo && m.tipo !== MateriaisView.filtroTipo) return false;
     if (!filtro) return true;
     return normalizaBuscaMaterial(m.nome).includes(filtro) || normalizaBuscaMaterial(m.observacao).includes(filtro);
+  });
+  const filtrados = FiltrosLista.aplicar(filtradosBase, 'materiais', {
+    func: (m) => m.criadoPorId,
+    data: (m) => m.criadoEm,
+    nome: (m) => m.nome,
+    aberto: () => false,
+    prazo: () => null,
   });
 
   const listaEl = document.getElementById('lista-materiais');

@@ -83,6 +83,11 @@ async function renderAdminMais(cont) {
                   : ''
               }
               ${
+                pendencias.marcenaria > 0
+                  ? `<div class="row__meta">🪵 <b>${pendencias.marcenaria}</b> pedido(s) de mudança / gabarito(s) aguardando — Marcenaria</div>`
+                  : ''
+              }
+              ${
                 pendencias.atelie > 0
                   ? `<div class="row__meta">🧵 <b>${pendencias.atelie}</b> pedido(s) de mudança no Ateliê aguardando autorização — Ateliê</div>`
                   : ''
@@ -816,6 +821,7 @@ const AdminCategoriasView = {
   nome: '',
   temPorcentagem: false,
   vaiParaAtelie: false,
+  vaiParaMarcenaria: false,
   erro: '',
 };
 
@@ -841,6 +847,7 @@ async function renderAdminCategorias(cont, view) {
           </div>
           <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto">
             ${c.vaiParaAtelie ? '<span class="badge badge--brand">Ateliê</span>' : ''}
+            ${c.vaiParaMarcenaria ? '<span class="badge badge--brand">Marcenaria</span>' : ''}
             <span class="badge ${c.temPorcentagem ? 'badge--brand' : 'badge--idle'}">${c.temPorcentagem ? 'Tem %' : 'Sem %'}</span>
             <button class="btn btn--ghost" data-editar-cat="${c.id}" style="padding:6px 12px; font-size:13px">Editar</button>
             <button class="btn btn--danger" data-excluir-cat="${c.id}" data-sistema-cat="${c.sistema ? '1' : ''}" style="padding:6px 12px; font-size:13px">Excluir</button>
@@ -858,6 +865,7 @@ async function renderAdminCategorias(cont, view) {
     AdminCategoriasView.nome = '';
     AdminCategoriasView.temPorcentagem = false;
     AdminCategoriasView.vaiParaAtelie = false;
+    AdminCategoriasView.vaiParaMarcenaria = false;
     AdminCategoriasView.erro = '';
     renderAdminCategorias(cont, view);
   });
@@ -872,6 +880,7 @@ async function renderAdminCategorias(cont, view) {
       AdminCategoriasView.nome = cat.nome;
       AdminCategoriasView.temPorcentagem = !!cat.temPorcentagem;
       AdminCategoriasView.vaiParaAtelie = !!cat.vaiParaAtelie;
+      AdminCategoriasView.vaiParaMarcenaria = !!cat.vaiParaMarcenaria;
       AdminCategoriasView.erro = '';
       renderAdminCategorias(cont, view);
     });
@@ -920,6 +929,11 @@ function renderFormCategoria(cont, view) {
         Vai para o Ateliê (os serviços dessa categoria aparecem na aba Ateliê pra conferência)
       </label>
 
+      <label style="display:flex; align-items:center; gap:8px; margin-bottom:20px; font-size:14px; color:var(--ink-soft)">
+        <input id="f-cat-marcenaria" type="checkbox" style="width:18px; height:18px" ${st.vaiParaMarcenaria ? 'checked' : ''} />
+        Vai para a Marcenaria (as peças dessa categoria aparecem na aba Marcenaria; com "% de Aproveitamento" marcado vira plano de corte de chapa)
+      </label>
+
       <div style="display:flex; gap:10px">
         <button class="btn btn--ghost" id="btn-cancelar-categoria" style="flex:1">Cancelar</button>
         <button class="btn btn--primary" id="btn-salvar-categoria" style="flex:2">Salvar</button>
@@ -934,6 +948,7 @@ function renderFormCategoria(cont, view) {
   document.getElementById('f-cat-nome-adm').addEventListener('input', (ev) => (st.nome = ev.target.value));
   document.getElementById('f-cat-porcentagem').addEventListener('change', (ev) => (st.temPorcentagem = ev.target.checked));
   document.getElementById('f-cat-atelie').addEventListener('change', (ev) => (st.vaiParaAtelie = ev.target.checked));
+  document.getElementById('f-cat-marcenaria').addEventListener('change', (ev) => (st.vaiParaMarcenaria = ev.target.checked));
 
   document.getElementById('btn-salvar-categoria').addEventListener('click', async () => {
     const btn = document.getElementById('btn-salvar-categoria');
@@ -945,9 +960,9 @@ function renderFormCategoria(cont, view) {
       await comTimeout(
         (async () => {
           if (editando) {
-            await Categorias.atualizar(st.editId, { nome: st.nome, temPorcentagem: st.temPorcentagem, vaiParaAtelie: st.vaiParaAtelie });
+            await Categorias.atualizar(st.editId, { nome: st.nome, temPorcentagem: st.temPorcentagem, vaiParaAtelie: st.vaiParaAtelie, vaiParaMarcenaria: st.vaiParaMarcenaria });
           } else {
-            await Categorias.criar(st.nome, st.temPorcentagem, st.vaiParaAtelie);
+            await Categorias.criar(st.nome, st.temPorcentagem, st.vaiParaAtelie, st.vaiParaMarcenaria);
           }
           st.formAberto = false;
           renderAdminCategorias(cont, view);
@@ -974,6 +989,7 @@ async function contarPendencias() {
     DB.getAll('materiais'),
     DB.getAll('categorias_material'),
   ]);
+  const gabaritos = await DB.getAll('gabaritos');
 
   const pendencias = {
     servicos: servicos.filter((s) => s.aprovado === 'pendente').length,
@@ -982,8 +998,9 @@ async function contarPendencias() {
     mkt: produtosMkt.filter((p) => p.aprovado === 'pendente').length,
     materiais: materiais.filter((m) => m.aprovado === 'pendente').length + categoriasMat.filter((c) => c.aprovado === 'pendente').length,
     atelie: servicos.filter((s) => s.atelieSolicitacao).length,
+    marcenaria: servicos.filter((s) => s.marcenariaSolicitacao).length + gabaritos.filter((g) => g.aprovado === 'pendente').length,
   };
-  pendencias.total = pendencias.servicos + pendencias.conclusoes + pendencias.planoCorte + pendencias.mkt + pendencias.materiais + pendencias.atelie;
+  pendencias.total = pendencias.servicos + pendencias.conclusoes + pendencias.planoCorte + pendencias.mkt + pendencias.materiais + pendencias.atelie + pendencias.marcenaria;
   return pendencias;
 }
 
@@ -1014,6 +1031,7 @@ const NOMES_COLECOES_BACKUP = {
   materiais: 'Materiais',
   categorias_material: 'Categorias de material',
   feriados: 'Feriados',
+  gabaritos: 'Gabaritos',
 };
 
 function chaveDeRegistroBackup(r) {
@@ -1146,6 +1164,7 @@ async function fazerBackup(prefixo = 'backup-engenharia-aluminas') {
     'materiais',
     'categorias_material',
     'feriados',
+    'gabaritos',
   ];
 
   const dados = { exportadoEm: Date.now() };

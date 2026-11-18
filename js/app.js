@@ -17,6 +17,7 @@ const ICONS = {
   admin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.36.4.66.73.85.3.18.66.27 1.02.24H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>',
   materiais: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6c0-1.1 3.6-2 8-2s8 .9 8 2v12c0 1.1-3.6 2-8 2s-8-.9-8-2V6Z"/><path d="M4 6c0 1.1 3.6 2 8 2s8-.9 8-2"/><path d="M4 12c0 1.1 3.6 2 8 2s8-.9 8-2"/></svg>',
   atelie: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v6H4z"/><path d="M8 10v10M16 10v10M6 20h12"/><path d="m9 7 2 1.5L15 5.5"/></svg>',
+  marcenaria: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V10l7-4 7 4v11"/><path d="m9 14 3-3 3 3"/><path d="M12 11v10"/></svg>',
   raiox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/><path d="M9 8h6M12 5v6"/></svg>',
   relatorio: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z"/><path d="M14 3v6h6"/><path d="M8 17v-3M12 17v-6M16 17v-2"/></svg>',
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
@@ -33,13 +34,14 @@ const TAB_DEFS = {
   treino: { id: 'treino', label: 'Treino', icon: ICONS.treino },
   materiais: { id: 'materiais', label: 'Materiais', icon: ICONS.materiais },
   atelie: { id: 'atelie', label: 'Ateliê', icon: ICONS.atelie },
+  marcenaria: { id: 'marcenaria', label: 'Marcenaria', icon: ICONS.marcenaria },
   raiox: { id: 'raiox', label: 'Raio-X', icon: ICONS.raiox },
   relatorio: { id: 'relatorio', label: 'Relatório', icon: ICONS.relatorio },
   admin: { id: 'admin', label: 'Admin', icon: ICONS.admin },
 };
 
 // ordem fixa do menu — cada pessoa só vê as abas que tem permissão
-const ORDEM_ABAS = ['dashboard', 'servicos', 'corte', 'avisos', 'ferias', 'mkt', 'treino', 'materiais', 'atelie', 'raiox', 'relatorio', 'admin'];
+const ORDEM_ABAS = ['dashboard', 'servicos', 'corte', 'avisos', 'ferias', 'mkt', 'treino', 'materiais', 'atelie', 'marcenaria', 'raiox', 'relatorio', 'admin'];
 
 function currentTabs() {
   const permitidas = Permissoes.doUsuario(Auth.current).abas;
@@ -288,7 +290,7 @@ document.addEventListener(
 function acharItemNaLista(view, id) {
   if (!id) return null;
   const btn = Array.from(view.querySelectorAll('button')).find((b) => Object.values(b.dataset || {}).includes(id));
-  return btn ? btn.closest('.row, .card, .atelie-item') || btn : null;
+  return btn ? btn.closest('.row, .card, .atelie-item, .marcenaria-item') || btn : null;
 }
 
 function restaurarPosicao(tab) {
@@ -347,6 +349,7 @@ async function renderViewDesenhar(tab) {
   if (tab === 'admin' && Auth.isAdmin()) return renderAdmin(view);
   if (tab === 'materiais') return renderMateriais(view);
   if (tab === 'atelie') return renderAtelie(view);
+  if (tab === 'marcenaria') return renderMarcenaria(view);
   if (tab === 'raiox') return renderRaioX(view);
   if (tab === 'relatorio' && Auth.isAdmin()) return renderRelatorio(view);
   if (tab === 'servicos') return renderServicos(view);

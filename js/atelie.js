@@ -257,7 +257,10 @@ async function renderAtelie(view) {
 
   const alvo = Analise.normaliza(st.filtroTexto);
   if (st.filtro === 'pedidos' && !ehAdmin) st.filtro = 'esperando';
-  const filtrados = itens.filter((s) => {
+  const funcsAt = (await DB.getAll('usuarios'))
+    .filter((u) => u.tipo === 'funcionario' || u.tipo === 'admin')
+    .sort((a, b) => (a.tipo === 'admin') - (b.tipo === 'admin') || (a.nome || '').localeCompare(b.nome || '', 'pt-BR'));
+  const filtradosBase = itens.filter((s) => {
     if (st.filtro === 'pedidos') {
       if (!s.atelieSolicitacao) return false;
     } else if (st.filtro !== 'todos' && s._situacao !== st.filtro) return false;
@@ -269,6 +272,14 @@ async function renderAtelie(view) {
       Analise.normaliza(s.observacoes).includes(alvo) ||
       Analise.normaliza(s.atelieObs).includes(alvo)
     );
+  });
+  const filtrados = FiltrosLista.aplicar(filtradosBase, 'atelie', {
+    func: (s) => s.funcionarioId,
+    data: (s) => s.dataFinal || s.criadoEm,
+    nome: (s) => s.nome,
+    aberto: (s) => s._situacao !== 'aprovado',
+    prazo: (s) => s.dataProgramada,
+    prioridade: (a, b) => (b.criadoEm || 0) - (a.criadoEm || 0),
   });
   st._visiveis = filtrados.map((s) => s.id);
 
@@ -318,6 +329,7 @@ async function renderAtelie(view) {
     </div>
     <div class="field" style="margin-bottom:14px">
       <input id="busca-atelie" placeholder="Buscar por nome, categoria, funcionário ou observação…" value="${escapeHtml(st.filtroTexto)}" />
+      ${FiltrosLista.html('atelie', { ordens: ['recentes', 'antigos', 'az', 'za', 'prazo'], funcionarios: funcsAt, rotuloData: 'Data' })}
     </div>
     <div id="barra-atelie"></div>
     <div id="lista-atelie"></div>
@@ -327,6 +339,7 @@ async function renderAtelie(view) {
   `;
 
   if (nomesCats.size === 0) return;
+  FiltrosLista.ligar(view, 'atelie', () => renderAtelie(view));
 
   const btnSel = document.getElementById('btn-selecao-atelie');
   if (btnSel) {

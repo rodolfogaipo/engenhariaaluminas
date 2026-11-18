@@ -990,3 +990,30 @@ td .dq-ferias, .dq-hero__sub .dq-ferias { margin-left: 0; margin-top: 0.6mm; }
 .restaurar-box .perm-item { align-items: flex-start; background: var(--surface); }
 .restaurar-box .perm-item input { margin-top: 2px; }
 .restaurar-box .tabela td input { width: 16px; height: 16px; accent-color: var(--brand-700); }
+.lista-mais { text-align: center; color: var(--ink-faint); font-size: 12.5px; padding: 12px 0 4px; }
+
+/* filtros comuns: funcionário / data / ordem */
+.filtros-extra { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: flex-end; margin-top: 10px; }
+.filtros-extra__campo { margin: 0 !important; flex: 1 1 150px; min-width: 130px; }
+.filtros-extra__campo label { font-size: 11.5px !important; margin-bottom: 3px !important; }
+.filtros-extra__campo select, .filtros-extra__campo input { padding-top: 7px; padding-bottom: 7px; font-size: 14px; }
+.filtros-extra__ordem { flex: 1.4 1 200px; }
+.filtros-extra__limpar { padding: 8px 12px; font-size: 13px; flex: 0 0 auto; }
+
+/* Marcenaria (mesmo visual do Ateliê) */
+/* Ateliê */
+.marcenaria-item--pedido { background: var(--warn-bg); }
+.marcenaria-pedido { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-m); background: var(--surface); border: 1px dashed var(--warn-fg); font-size: 13.5px; }
+.marcenaria-editor { margin-top: 10px; padding: 12px; border-radius: var(--radius-m); background: var(--surface-sunken); border: 1px solid var(--line); }
+.marcenaria-item .sel-pdf { margin-top: 3px; }
+/* Ateliê — ver por móvel */
+.marcenaria-movel { padding: 16px 18px; }
+.marcenaria-pecas { margin: 12px -18px -16px; border-top: 1px solid var(--line); }
+.marcenaria-pecas .marcenaria-item { background: var(--surface-sunken); }
+.marcenaria-movel--sem { border: 1px dashed var(--warn-fg); background: var(--warn-bg); }
+.marc-aprov { padding: 12px 16px; margin-bottom: 12px; }
+.marc-aprov__lista { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13.5px; color: var(--ink-soft); }
+.marc-aprov__item b { color: var(--brand-800); }
+.gab-foto { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; flex: 0 0 auto; background: var(--paper-dim); }
+.gab-foto--vazia { display: flex; align-items: center; justify-content: center; font-size: 26px; }
+.gab-moveis { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }

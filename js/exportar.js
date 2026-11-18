@@ -27,6 +27,7 @@ const Exportar = {
     { chave: 'desperdicio', titulo: '% Desperdício', tipo: 'numero', largura: 12 },
     { chave: 'atelie', titulo: 'Situação no ateliê', tipo: 'texto', largura: 16 },
     { chave: 'atelieObs', titulo: 'Obs. do ateliê', tipo: 'texto', largura: 28 },
+    { chave: 'marcenaria', titulo: 'Situação na marcenaria', tipo: 'texto', largura: 18 },
     { chave: 'origem', titulo: 'Origem', tipo: 'texto', largura: 12 },
   ],
 
@@ -52,6 +53,7 @@ const Exportar = {
       desperdicio: Analise.desperdicio(i),
       atelie: i.atelie || '',
       atelieObs: i.atelieObs || '',
+      marcenaria: i.marcenaria || '',
       origem: i.origem === 'corte' ? 'Aba Corte' : 'Serviços',
     }));
   },

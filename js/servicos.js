@@ -141,9 +141,9 @@ function servicoVisivelPara(s, userId) {
 
 async function atualizarListaServicos(view) {
   // tempo gasto em cada serviço — só o Admin vê
-  const tempos = Auth.isAdmin() ? await Tempo.calcular(true) : null;
+  const tempos = Auth.isAdmin() ? await Tempo.calcular() : null;
   // categorias que vão pro Ateliê (etiqueta com a situação em cada serviço)
-  const [catsAtelie, inicioAtelie] = await Promise.all([Atelie.nomesCategorias(), Atelie.inicio()]);
+  const [catsAtelie, inicioAtelie, catsMarc, inicioMarc] = await Promise.all([Atelie.nomesCategorias(), Atelie.inicio(), Marcenaria.nomesCategorias(), Marcenaria.inicio()]);
   const user = Auth.current;
   const todos = await DB.getAll('servicos');
 
@@ -181,6 +181,10 @@ async function atualizarListaServicos(view) {
   const aprovarOuValidar = (s) => s.aprovado === 'pendente' || (!s.dataFinal && !!s.concluidoInformadoEm);
   contaEst.pendentes = baseFiltro.filter(aprovarOuValidar).length;
   if (fv.filtroEstado === 'pendentes' && !Auth.isAdmin()) fv.filtroEstado = 'todos';
+  const usuariosTodos = await DB.getAll('usuarios');
+  const funcionariosLista = usuariosTodos
+    .filter((u) => u.tipo === 'funcionario' || u.tipo === 'admin')
+    .sort((a, b) => (a.tipo === 'admin') - (b.tipo === 'admin') || (a.nome || '').localeCompare(b.nome || '', 'pt-BR'));
   const filtrosEl = document.getElementById('filtros-servicos');
   if (filtrosEl) {
     filtrosEl.innerHTML = `
@@ -205,6 +209,7 @@ async function atualizarListaServicos(view) {
           </select>
         </div>
       </div>
+      ${FiltrosLista.html('servicos', { ordens: ['prazo', 'recentes', 'antigos', 'az', 'za'], funcionarios: funcionariosLista, rotuloData: 'Data' })}
       ${fv.filtroEstado === 'em_andamento' ? '<div class="row__meta" style="margin-top:6px">Em andamento inclui os que o funcionário já marcou como concluídos e esperam sua validação.</div>' : ''}`;
     filtrosEl.querySelectorAll('[data-filtro-estado]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -212,6 +217,7 @@ async function atualizarListaServicos(view) {
         atualizarListaServicos(view);
       })
     );
+    FiltrosLista.ligar(filtrosEl, 'servicos', () => atualizarListaServicos(view));
     const sel = document.getElementById('filtro-categoria-servico');
     sel.addEventListener('change', () => {
       fv.filtroCategoria = sel.value;
@@ -219,11 +225,11 @@ async function atualizarListaServicos(view) {
     });
   }
 
-  const filtrados = baseFiltro
+  const filtradosBase = baseFiltro
     .filter((s) =>
       fv.filtroEstado === 'todos' ? true : fv.filtroEstado === 'pendentes' ? aprovarOuValidar(s) : estadoServico(s) === fv.filtroEstado
-    )
-    .sort((a, b) => {
+    );
+  const prioridadePadrao = (a, b) => {
       const prioridadeDe = (s) => {
         if (s.aprovado !== 'aprovado') return -1; // pendente de aprovação sempre no topo, pro Admin achar rápido
         const estado = estadoServico(s);
@@ -243,7 +249,16 @@ async function atualizarListaServicos(view) {
       const agora = Date.now();
       const chaveOrdenacao = (s) => (estadoServico(s) === 'concluido' ? s.dataFinal || 0 : Math.min(s.criadoEm || 0, agora));
       return chaveOrdenacao(b) - chaveOrdenacao(a);
-    });
+    };
+  const filtrados = FiltrosLista.aplicar(filtradosBase, 'servicos', {
+    func: (x) => x.funcionarioId,
+    // data mostrada/filtrada: conclusão se concluído, senão lançamento
+    data: (x) => (estadoServico(x) === 'concluido' ? x.dataFinal : x.criadoEm),
+    nome: (x) => x.nome,
+    aberto: (x) => estadoServico(x) !== 'concluido',
+    prazo: (x) => x.dataProgramada,
+    prioridade: prioridadePadrao,
+  });
 
   const listaEl = document.getElementById('lista-servicos');
   if (!listaEl) return;
@@ -260,10 +275,9 @@ async function atualizarListaServicos(view) {
     return;
   }
 
-  listaEl.innerHTML = `
-    <div class="card" style="padding:0">
-      ${filtrados
-        .map((s) => {
+  // Desenha a lista em lotes, conforme a pessoa rola — com milhares de
+  // serviços, desenhar tudo de uma vez travava a aba.
+  const linhaHtml = (s) => {
           const statusBadge =
             s.aprovado === 'aprovado'
               ? '<span class="badge badge--ok">Aprovado</span>'
@@ -377,6 +391,8 @@ async function atualizarListaServicos(view) {
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
               ${statusBadge}
               ${seloAtelie}
+              ${catsMarc.has(s.tipo) ? `${Marcenaria.selo(Marcenaria.situacao(s, inicioMarc), 'Marcenaria: ')}${s.marcenariaSolicitacao ? ' <span class="badge badge--warn">pedido de mudança</span>' : ''}` : ''}
+              ${estadoServico(s) !== 'concluido' && s.dataProgramada ? FiltrosLista.seloPrazo(s.dataProgramada) : ''}
               ${disponivelBadge}
               ${emAndamentoBadge}
               ${concluidoBadge}
@@ -391,12 +407,10 @@ async function atualizarListaServicos(view) {
               ${delBtn}
             </div>
           </div>`;
-        })
-        .join('')}
-    </div>
-  `;
+        };
 
-  listaEl.querySelectorAll('.chk-selecionar').forEach((chk) => {
+  const ligarAcoes = (raiz) => {
+  raiz.querySelectorAll('.chk-selecionar').forEach((chk) => {
     chk.addEventListener('change', () => {
       const id = chk.dataset.id;
       if (chk.checked) ServicosView.selecionados.add(id);
@@ -405,7 +419,7 @@ async function atualizarListaServicos(view) {
     });
   });
 
-  listaEl.querySelectorAll('[data-desconsiderar-tempo]').forEach((btn) => {
+  raiz.querySelectorAll('[data-desconsiderar-tempo]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const registro = await DB.get('servicos', btn.dataset.desconsiderarTempo);
       if (!registro) return;
@@ -415,7 +429,7 @@ async function atualizarListaServicos(view) {
     });
   });
 
-  listaEl.querySelectorAll('[data-comecar]').forEach((btn) => {
+  raiz.querySelectorAll('[data-comecar]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const registro = await DB.get('servicos', btn.dataset.comecar);
       if (!registro) return;
@@ -433,7 +447,7 @@ async function atualizarListaServicos(view) {
     });
   });
 
-  listaEl.querySelectorAll('[data-marcar-concluido]').forEach((btn) => {
+  raiz.querySelectorAll('[data-marcar-concluido]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const registro = await DB.get('servicos', btn.dataset.marcarConcluido);
       if (!registro) return;
@@ -442,7 +456,7 @@ async function atualizarListaServicos(view) {
     });
   });
 
-  listaEl.querySelectorAll('[data-aprovar]').forEach((btn) => {
+  raiz.querySelectorAll('[data-aprovar]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.aprovar;
       const registro = await DB.get('servicos', id);
@@ -455,7 +469,7 @@ async function atualizarListaServicos(view) {
     });
   });
 
-  listaEl.querySelectorAll('[data-concluir]').forEach((btn) => {
+  raiz.querySelectorAll('[data-concluir]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const registro = await DB.get('servicos', btn.dataset.concluir);
       if (!registro) return;
@@ -465,7 +479,7 @@ async function atualizarListaServicos(view) {
     });
   });
 
-  listaEl.querySelectorAll('[data-editar]').forEach((btn) => {
+  raiz.querySelectorAll('[data-editar]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const registro = await DB.get('servicos', btn.dataset.editar);
       if (!registro) return;
@@ -475,7 +489,7 @@ async function atualizarListaServicos(view) {
     });
   });
 
-  listaEl.querySelectorAll('[data-excluir]').forEach((btn) => {
+  raiz.querySelectorAll('[data-excluir]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const registro = await DB.get('servicos', btn.dataset.excluir);
       if (!registro) return;
@@ -486,6 +500,44 @@ async function atualizarListaServicos(view) {
       atualizarListaServicos(view);
     });
   });
+  };
+
+  const LOTE = 40;
+  let mostrados = 0;
+  listaEl.innerHTML = `<div class="card" style="padding:0" id="lista-servicos-itens"></div><div id="lista-servicos-mais" class="lista-mais"></div>`;
+  const itensEl = document.getElementById('lista-servicos-itens');
+  const maisEl = document.getElementById('lista-servicos-mais');
+  const mostrarMais = (quantos = LOTE) => {
+    const fatia = filtrados.slice(mostrados, mostrados + quantos);
+    if (!fatia.length) return;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = fatia.map(linhaHtml).join('');
+    ligarAcoes(tmp);
+    const frag = document.createDocumentFragment();
+    while (tmp.firstChild) frag.appendChild(tmp.firstChild);
+    itensEl.appendChild(frag);
+    mostrados += fatia.length;
+    maisEl.textContent = mostrados < filtrados.length ? `Mostrando ${mostrados} de ${filtrados.length} — role pra ver mais` : `${filtrados.length} serviço(s)`;
+  };
+  // voltando de um Editar: já desenha até o item editado
+  const pos = typeof PosicaoLista !== 'undefined' ? PosicaoLista.servicos : null;
+  const idxVolta = pos ? filtrados.findIndex((x) => x.id === pos.id) : -1;
+  mostrarMais(Math.max(LOTE, idxVolta + 10));
+  if (ServicosView._observador) ServicosView._observador.disconnect();
+  if (mostrados < filtrados.length && 'IntersectionObserver' in window) {
+    ServicosView._observador = new IntersectionObserver(
+      (entradas) => {
+        if (entradas.some((e) => e.isIntersecting)) {
+          mostrarMais();
+          if (mostrados >= filtrados.length) ServicosView._observador.disconnect();
+        }
+      },
+      { root: document.getElementById('view'), rootMargin: '0px 0px 900px 0px' }
+    );
+    ServicosView._observador.observe(maisEl);
+  } else if (mostrados < filtrados.length) {
+    mostrarMais(filtrados.length);
+  }
 }
 
 function renderListaAnexosForm(view) {
@@ -633,8 +685,10 @@ async function renderServicoForm(view) {
   await Materiais.listarCategorias(); // categorias de material são livres (aba Materiais)
   const tipoMaterial = Materiais.tipoDaCategoria(st.tipo);
   const catAtual = categoriasCache.find((c) => c.nome === st.tipo);
-  const vaiParaAtelie = !!(catAtual && catAtual.vaiParaAtelie);
-  const moveisConhecidos = vaiParaAtelie ? await Atelie.nomesMoveis() : [];
+  const vaiParaAtelie = !!(catAtual && (catAtual.vaiParaAtelie || catAtual.vaiParaMarcenaria));
+  const moveisConhecidos = vaiParaAtelie
+    ? Array.from(new Set([...(await Atelie.nomesMoveis()), ...(await Marcenaria.nomesMoveis())])).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }))
+    : [];
   const ehAdmin = Auth.isAdmin();
   if (ehAdmin) {
     funcionariosCache = await DB.getAll('usuarios'); // inclui o próprio Admin, pra ele poder se atribuir serviços e aparecer em "Minha Produção"
@@ -672,7 +726,7 @@ async function renderServicoForm(view) {
       ${
         vaiParaAtelie
           ? `<div class="field">
-              <label for="f-movel">Móvel (opcional — pro Ateliê juntar as peças certas)</label>
+              <label for="f-movel">Móvel (opcional — pro Ateliê/Marcenaria juntar as peças certas)</label>
               <input id="f-movel" list="lista-moveis-atelie" value="${escapeHtml(st.movel || '')}" placeholder="Ex: POLTRONA CHLÔE — comece a digitar pra ver os que já existem" autocomplete="off" />
               <datalist id="lista-moveis-atelie">
                 ${moveisConhecidos.map((m) => `<option value="${escapeHtml(m)}"></option>`).join('')}
@@ -1382,7 +1436,7 @@ async function atualizarSugestaoTempo() {
 function aplicarMovelNoRegistro(registro, st) {
   const cat = categoriasCache.find((c) => c.nome === registro.tipo);
   const m = String(st.movel || '').trim();
-  registro.movel = cat && cat.vaiParaAtelie && m ? m : null;
+  registro.movel = cat && (cat.vaiParaAtelie || cat.vaiParaMarcenaria) && m ? m : null;
 }
 
 function aplicarMaterialNoRegistro(registro, st) {

@@ -25,6 +25,7 @@ const Analise = {
       Atelie.nomesCategorias(),
       Atelie.inicio(),
     ]);
+    const [catsMarc, inicioMarc] = await Promise.all([Marcenaria.nomesCategorias(), Marcenaria.inicio()]);
     const itens = [];
 
     servicos.forEach((s) => {
@@ -48,6 +49,7 @@ const Analise = {
         observacoes: s.observacoes || '',
         atelie: catsAtelie.has(s.tipo) ? Atelie.rotulo(Atelie.situacao(s, inicioAtelie)) : '',
         atelieObs: catsAtelie.has(s.tipo) ? s.atelieObs || '' : '',
+        marcenaria: catsMarc.has(s.tipo) ? Marcenaria.rotulo(Marcenaria.situacao(s, inicioMarc)) : '',
       });
     });
 

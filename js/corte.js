@@ -78,6 +78,9 @@ async function atualizarListaCorte(view) {
   contaCorte.pendentes = baseCorte.filter((p) => p.aprovado === 'pendente').length;
   if (CorteView.filtroStatus === 'pendentes' && !Auth.isAdmin()) CorteView.filtroStatus = 'todos';
   if (!CorteView.filtroStatus) CorteView.filtroStatus = 'todos';
+  const funcsCorte = (await DB.getAll('usuarios'))
+    .filter((u) => u.tipo === 'funcionario' || u.tipo === 'admin')
+    .sort((a, b) => (a.tipo === 'admin') - (b.tipo === 'admin') || (a.nome || '').localeCompare(b.nome || '', 'pt-BR'));
   const filtrosEl = document.getElementById('filtros-corte');
   if (filtrosEl) {
     filtrosEl.innerHTML = `<div class="chips">${[
@@ -91,7 +94,8 @@ async function atualizarListaCorte(view) {
       Auth.isAdmin()
         ? `<button class="chip chip--pendente ${CorteView.filtroStatus === 'pendentes' ? 'chip--on' : ''}" data-filtro-corte="pendentes">⚑ A aprovar <small>${contaCorte.pendentes}</small></button>`
         : ''
-    }</div>`;
+    }</div>${FiltrosLista.html('corte', { ordens: ['prazo', 'recentes', 'antigos', 'az', 'za'], funcionarios: funcsCorte, rotuloData: 'Chegada' })}`;
+    FiltrosLista.ligar(filtrosEl, 'corte', () => atualizarListaCorte(view));
     filtrosEl.querySelectorAll('[data-filtro-corte]').forEach((b) =>
       b.addEventListener('click', () => {
         CorteView.filtroStatus = b.dataset.filtroCorte;
@@ -99,21 +103,31 @@ async function atualizarListaCorte(view) {
       })
     );
   }
-  const filtrados = baseCorte
-    .filter((p) =>
+  const filtrados = FiltrosLista.aplicar(
+    baseCorte.filter((p) =>
       CorteView.filtroStatus === 'todos' ? true : CorteView.filtroStatus === 'pendentes' ? p.aprovado === 'pendente' : statusCorte(p) === CorteView.filtroStatus
-    )
-    .sort((a, b) => {
-      // pendente de aprovação sempre no topo, pro Admin achar rápido
-      const pendA = a.aprovado !== 'aprovado' ? 0 : 1;
-      const pendB = b.aprovado !== 'aprovado' ? 0 : 1;
-      if (pendA !== pendB) return pendA - pendB;
-      return b.criadoEm - a.criadoEm;
-    });
+    ),
+    'corte',
+    {
+      // funcionário do corte (ou, se ainda não tem, quem fez a CNP)
+      func: (p) => p.funcionarioCorteId || p.funcionarioCNPId,
+      data: (p) => p.dataChegada || p.criadoEm,
+      nome: (p) => p.nomeProduto,
+      aberto: (p) => p.status !== 'Concluído',
+      prazo: (p) => p.dataProgramada,
+      prioridade: (a, b) => {
+        // pendente de aprovação sempre no topo, pro Admin achar rápido
+        const pendA = a.aprovado !== 'aprovado' ? 0 : 1;
+        const pendB = b.aprovado !== 'aprovado' ? 0 : 1;
+        if (pendA !== pendB) return pendA - pendB;
+        return (b.criadoEm || 0) - (a.criadoEm || 0);
+      },
+    }
+  );
 
   const listaEl = document.getElementById('lista-corte');
   if (!listaEl) return;
-  const tempos = user.tipo === 'admin' ? await Tempo.calcular(true) : null;
+  const tempos = user.tipo === 'admin' ? await Tempo.calcular() : null;
 
   if (filtrados.length === 0) {
     listaEl.innerHTML = `
@@ -126,10 +140,7 @@ async function atualizarListaCorte(view) {
     return;
   }
 
-  listaEl.innerHTML = `
-    <div class="card" style="padding:0">
-      ${filtrados
-        .map((p) => {
+  const linhaHtml = (p) => {
           const pendenteBadge = p.aprovado !== 'aprovado' ? '<span class="badge badge--warn">Pendente aprovação</span>' : '';
           const aprovBtn =
             user.tipo === 'admin' && p.aprovado !== 'aprovado'
@@ -199,12 +210,10 @@ async function atualizarListaCorte(view) {
               ${delBtn}
             </div>
           </div>`;
-        })
-        .join('')}
-    </div>
-  `;
+        };
 
-  listaEl.querySelectorAll('[data-aprovar]').forEach((btn) => {
+  const ligarAcoes = (raiz) => {
+  raiz.querySelectorAll('[data-aprovar]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const pc = await DB.get('plano_corte', btn.dataset.aprovar);
       if (!pc) return;
@@ -213,7 +222,7 @@ async function atualizarListaCorte(view) {
     });
   });
 
-  listaEl.querySelectorAll('[data-iniciar-corte]').forEach((btn) => {
+  raiz.querySelectorAll('[data-iniciar-corte]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const pc = await DB.get('plano_corte', btn.dataset.iniciarCorte);
       if (!pc || pc.dataInicioCorte) return;
@@ -228,7 +237,7 @@ async function atualizarListaCorte(view) {
     });
   });
 
-  listaEl.querySelectorAll('[data-finalizar-corte]').forEach((btn) => {
+  raiz.querySelectorAll('[data-finalizar-corte]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const pc = await DB.get('plano_corte', btn.dataset.finalizarCorte);
       if (!pc || pc.dataFinalCorte) return;
@@ -250,7 +259,7 @@ async function atualizarListaCorte(view) {
     });
   });
 
-  listaEl.querySelectorAll('[data-desconsiderar-tempo-corte]').forEach((btn) => {
+  raiz.querySelectorAll('[data-desconsiderar-tempo-corte]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const pc = await DB.get('plano_corte', btn.dataset.desconsiderarTempoCorte);
       if (!pc) return;
@@ -260,7 +269,7 @@ async function atualizarListaCorte(view) {
     });
   });
 
-  listaEl.querySelectorAll('[data-editar]').forEach((btn) => {
+  raiz.querySelectorAll('[data-editar]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const pc = await DB.get('plano_corte', btn.dataset.editar);
       if (!pc) return;
@@ -270,7 +279,7 @@ async function atualizarListaCorte(view) {
     });
   });
 
-  listaEl.querySelectorAll('[data-excluir]').forEach((btn) => {
+  raiz.querySelectorAll('[data-excluir]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       if (!confirm('Excluir este registro de Plano de Corte? A CNP original em Serviços não será apagada.')) return;
       const pc = await DB.get('plano_corte', btn.dataset.excluir);
@@ -281,6 +290,44 @@ async function atualizarListaCorte(view) {
       atualizarListaCorte(view);
     });
   });
+  };
+
+  // desenha em lotes conforme rola (lista grande não trava)
+  const LOTE = 40;
+  let mostrados = 0;
+  listaEl.innerHTML = `<div class="card" style="padding:0" id="lista-corte-itens"></div><div id="lista-corte-mais" class="lista-mais"></div>`;
+  const itensEl = document.getElementById('lista-corte-itens');
+  const maisEl = document.getElementById('lista-corte-mais');
+  const mostrarMais = (quantos = LOTE) => {
+    const fatia = filtrados.slice(mostrados, mostrados + quantos);
+    if (!fatia.length) return;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = fatia.map(linhaHtml).join('');
+    ligarAcoes(tmp);
+    const frag = document.createDocumentFragment();
+    while (tmp.firstChild) frag.appendChild(tmp.firstChild);
+    itensEl.appendChild(frag);
+    mostrados += fatia.length;
+    maisEl.textContent = mostrados < filtrados.length ? `Mostrando ${mostrados} de ${filtrados.length} — role pra ver mais` : `${filtrados.length} item(ns)`;
+  };
+  const pos = typeof PosicaoLista !== 'undefined' ? PosicaoLista.corte : null;
+  const idxVolta = pos ? filtrados.findIndex((x) => x.id === pos.id) : -1;
+  mostrarMais(Math.max(LOTE, idxVolta + 10));
+  if (CorteView._observador) CorteView._observador.disconnect();
+  if (mostrados < filtrados.length && 'IntersectionObserver' in window) {
+    CorteView._observador = new IntersectionObserver(
+      (entradas) => {
+        if (entradas.some((e) => e.isIntersecting)) {
+          mostrarMais();
+          if (mostrados >= filtrados.length) CorteView._observador.disconnect();
+        }
+      },
+      { root: document.getElementById('view'), rootMargin: '0px 0px 900px 0px' }
+    );
+    CorteView._observador.observe(maisEl);
+  } else if (mostrados < filtrados.length) {
+    mostrarMais(filtrados.length);
+  }
 }
 
 /* ---------------- FORMULÁRIO ---------------- */

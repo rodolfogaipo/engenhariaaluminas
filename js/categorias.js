@@ -65,7 +65,7 @@ const Categorias = {
     return c ? c.categoriaCadastro : null;
   },
 
-  async criar(nome, temPorcentagem, vaiParaAtelie) {
+  async criar(nome, temPorcentagem, vaiParaAtelie, vaiParaMarcenaria) {
     nome = (nome || '').trim();
     if (!nome) throw new Error('Digite o nome da categoria.');
     const itens = await DB.getAll('categorias_servico');
@@ -77,6 +77,7 @@ const Categorias = {
       nome,
       temPorcentagem: !!temPorcentagem,
       vaiParaAtelie: !!vaiParaAtelie,
+      vaiParaMarcenaria: !!vaiParaMarcenaria,
       categoriaCadastro: null,
       sistema: false,
       criadoEm: Date.now(),
@@ -85,7 +86,7 @@ const Categorias = {
     return registro;
   },
 
-  async atualizar(id, { nome, temPorcentagem, vaiParaAtelie }) {
+  async atualizar(id, { nome, temPorcentagem, vaiParaAtelie, vaiParaMarcenaria }) {
     let nomeAntigo = null;
     const cat = await DB.get('categorias_servico', id);
     if (!cat) throw new Error('Categoria não encontrada.');
@@ -109,6 +110,7 @@ const Categorias = {
     }
     cat.temPorcentagem = !!temPorcentagem;
     if (vaiParaAtelie !== undefined) cat.vaiParaAtelie = !!vaiParaAtelie;
+    if (vaiParaMarcenaria !== undefined) cat.vaiParaMarcenaria = !!vaiParaMarcenaria;
     await DB.put('categorias_servico', cat);
 
     // os serviços guardam o NOME da categoria — leva o nome novo pra
