@@ -51,6 +51,7 @@ const Analise = {
         atelie: catsAtelie.has(s.tipo) ? Atelie.rotulo(Atelie.situacao(s, inicioAtelie)) : '',
         atelieObs: catsAtelie.has(s.tipo) ? s.atelieObs || '' : '',
         marcenaria: catsMarc.has(s.tipo) ? Marcenaria.rotulo(Marcenaria.situacao(s, inicioMarc)) : '',
+        movel: s.movel || null,
         laser: partesLaser.has(s.tipo)
           ? `${partesLaser.get(s.tipo) === 'tubo' ? 'Tubo' : 'Chapa'} · ${Laser.rotulo(Laser.situacao(s, inicioLaser))}`
           : '',

@@ -1058,11 +1058,12 @@ async function montarPdfLaser(itens) {
     if (s.tipo !== atual) {
       atual = s.tipo;
       const n = ordenados.filter((x) => x.tipo === atual).length;
-      linhas.push(`<tr class="rp-grupo"><td colspan="6">${escapeHtml(atual)} — ${n} item(ns)</td></tr>`);
+      linhas.push(`<tr class="rp-grupo"><td colspan="7">${escapeHtml(atual)} — ${n} item(ns)</td></tr>`);
     }
     linhas.push(`<tr>
       <td class="nowrap">${formatarDataCurta(s.criadoEm)}</td>
       <td>${escapeHtml(s.nome || '')}${s.observacoes ? `<div class="rp-fraco">${escapeHtml(s.observacoes)}</div>` : ''}</td>
+      <td>${s._movel ? escapeHtml(s._movel) : '<span class="rp-fraco">—</span>'}</td>
       <td class="nowrap">${escapeHtml(nomeCurtoRelatorio(s.funcionarioNome))}</td>
       <td class="nowrap">${Laser.rotulo(s._situacao)}</td>
       <td>${escapeHtml(s.materialNome || '')}</td>
@@ -1076,14 +1077,14 @@ async function montarPdfLaser(itens) {
     },
     {
       tipo: 'tabela',
-      cabecalho: '<tr><th>Data</th><th>Cadastro</th><th>Funcionário</th><th>Situação</th><th>Material</th><th>Obs. do laser</th></tr>',
+      cabecalho: '<tr><th>Data</th><th>Cadastro</th><th>Móvel</th><th>Funcionário</th><th>Situação</th><th>Material</th><th>Obs. do laser</th></tr>',
       linhas,
       classe: 'rp-tabela--lista',
     },
   ];
   return montarPdfPadrao(blocos, {
     titulo: `Laser — ${Laser.PARTES[LaserView.aba].rotulo}`,
-    periodo: `${ordenados.length} item${ordenados.length === 1 ? '' : 'ns'}`,
+    periodo: `${ordenados.length} ${ordenados.length === 1 ? 'item' : 'itens'}`,
     detalhes: 'Situação das peças no laser',
   });
 }

@@ -948,13 +948,15 @@ async function montarPdfMarcenaria(itens) {
     if (s.tipo !== atual) {
       atual = s.tipo;
       const n = ordenados.filter((x) => x.tipo === atual).length;
-      linhas.push(`<tr class="rp-grupo"><td colspan="6">${escapeHtml(atual)} — ${n} item(ns)</td></tr>`);
+      linhas.push(`<tr class="rp-grupo"><td colspan="8">${escapeHtml(atual)} — ${n} item(ns)</td></tr>`);
     }
     linhas.push(`<tr>
       <td class="nowrap">${formatarDataCurta(s.criadoEm)}</td>
       <td>${escapeHtml(s.nome || '')}${s.observacoes ? `<div class="rp-fraco">${escapeHtml(s.observacoes)}</div>` : ''}</td>
+      <td>${s._movel ? escapeHtml(s._movel) : '<span class="rp-fraco">—</span>'}</td>
       <td class="nowrap">${escapeHtml(nomeCurtoRelatorio(s.funcionarioNome))}</td>
       <td class="nowrap">${Marcenaria.rotulo(s._situacao)}</td>
+      <td>${escapeHtml(s.materialNome || '')}</td>
           <td class="num">${s.percentualAproveitamento != null ? formatarPct(Number(s.percentualAproveitamento)) : ''}</td>
       <td>${escapeHtml(s.marcenariaObs || '')}</td>
     </tr>`);
@@ -966,14 +968,14 @@ async function montarPdfMarcenaria(itens) {
     },
     {
       tipo: 'tabela',
-      cabecalho: '<tr><th>Data</th><th>Cadastro</th><th>Funcionário</th><th>Situação</th><th class="num">Aprov.</th><th>Obs. da marcenaria</th></tr>',
+      cabecalho: '<tr><th>Data</th><th>Cadastro</th><th>Móvel</th><th>Funcionário</th><th>Situação</th><th>Material</th><th class="num">Aprov.</th><th>Obs. da marcenaria</th></tr>',
       linhas,
       classe: 'rp-tabela--lista',
     },
   ];
   return montarPdfPadrao(blocos, {
     titulo: 'Marcenaria',
-    periodo: `${ordenados.length} item${ordenados.length === 1 ? '' : 'ns'}`,
+    periodo: `${ordenados.length} ${ordenados.length === 1 ? 'item' : 'itens'}`,
     detalhes: 'Situação dos cadastros na marcenaria',
   });
 }
@@ -992,7 +994,7 @@ async function montarPdfMarcenariaMoveis(itens) {
     const pecas = [...g.pecas].sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { numeric: true }));
     blocos.push({
       tipo: 'tabela',
-      cabecalho: '<tr><th>Peça</th><th>Categoria</th><th>Data</th><th>Funcionário</th><th>Situação</th><th class="num">Aprov.</th><th>Obs. da marcenaria</th></tr>',
+      cabecalho: '<tr><th>Peça</th><th>Categoria</th><th>Data</th><th>Funcionário</th><th>Situação</th><th>Material</th><th class="num">Aprov.</th><th>Obs. da marcenaria</th></tr>',
       linhas: pecas.map(
         (s) => `<tr>
           <td>${escapeHtml(s.nome || '')}${s.observacoes ? `<div class="rp-fraco">${escapeHtml(s.observacoes)}</div>` : ''}</td>
@@ -1000,6 +1002,7 @@ async function montarPdfMarcenariaMoveis(itens) {
           <td class="nowrap">${formatarDataCurta(s.criadoEm)}</td>
           <td class="nowrap">${escapeHtml(nomeCurtoRelatorio(s.funcionarioNome))}</td>
           <td class="nowrap">${Marcenaria.rotulo(s._situacao)}</td>
+      <td>${escapeHtml(s.materialNome || '')}</td>
           <td class="num">${s.percentualAproveitamento != null ? formatarPct(Number(s.percentualAproveitamento)) : ''}</td>
           <td>${escapeHtml(s.marcenariaObs || '')}</td>
         </tr>`

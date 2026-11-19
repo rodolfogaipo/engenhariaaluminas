@@ -121,6 +121,14 @@ const Atelie = {
     return semAcento.slice(idx).normalize('NFC').trim() || texto;
   },
 
+  // Móvel pra mostrar ao lado do nome (relatórios): '' quando não ajuda
+  movelParaMostrar(nome, movelInformado) {
+    const m = String(movelInformado || '').trim() || this.movelDe(nome);
+    if (!m || m === this.SEM_MOVEL || m.length > 60) return '';
+    if (this.chaveMovel(m) === this.chaveMovel(nome)) return '';
+    return m;
+  },
+
   movelDe(nome) {
     const original = String(nome || '').trim();
     if (!this._memoMovel) this._memoMovel = new Map();
@@ -136,8 +144,11 @@ const Atelie = {
     const m = re.exec(original);
     if (m) {
       const depois = original.slice(m.index + m[0].length).replace(/^[\s\-–—:,.]+/, '').trim();
-      if (/[A-Za-zÀ-ÿ]{3,}/.test(depois)) return depois;
       const antes = original.slice(0, m.index).replace(/[\s\-–—:,.]+$/, '').trim();
+      // o móvel vem depois da medida (ZÍPER 1,25X12,5 NAMORADEIRA CHLÔE),
+      // a não ser que depois só tenha detalhe (… 1,00X1,00 BÇ ESQUERDO)
+      // e o tipo de móvel esteja antes
+      if (/[A-Za-zÀ-ÿ]{3,}/.test(depois) && (this.temTipoDeMovel(depois) || !this.temTipoDeMovel(antes))) return depois;
       return this.aPartirDoTipoDeMovel(antes || original);
     }
     return this.aPartirDoTipoDeMovel(original);
@@ -982,13 +993,15 @@ async function montarPdfAtelie(itens) {
     if (s.tipo !== atual) {
       atual = s.tipo;
       const n = ordenados.filter((x) => x.tipo === atual).length;
-      linhas.push(`<tr class="rp-grupo"><td colspan="5">${escapeHtml(atual)} — ${n} item(ns)</td></tr>`);
+      linhas.push(`<tr class="rp-grupo"><td colspan="7">${escapeHtml(atual)} — ${n} item(ns)</td></tr>`);
     }
     linhas.push(`<tr>
       <td class="nowrap">${formatarDataCurta(s.criadoEm)}</td>
       <td>${escapeHtml(s.nome || '')}${s.observacoes ? `<div class="rp-fraco">${escapeHtml(s.observacoes)}</div>` : ''}</td>
+      <td>${s._movel ? escapeHtml(s._movel) : '<span class="rp-fraco">—</span>'}</td>
       <td class="nowrap">${escapeHtml(nomeCurtoRelatorio(s.funcionarioNome))}</td>
       <td class="nowrap ${s._situacao === 'reprovado' ? 'rp-ruim' : ''}">${Atelie.rotulo(s._situacao)}</td>
+      <td>${escapeHtml(s.materialNome || '')}</td>
       <td>${escapeHtml(s.atelieObs || '')}</td>
     </tr>`);
   });
@@ -999,14 +1012,14 @@ async function montarPdfAtelie(itens) {
     },
     {
       tipo: 'tabela',
-      cabecalho: '<tr><th>Data</th><th>Cadastro</th><th>Funcionário</th><th>Situação</th><th>Obs. do ateliê</th></tr>',
+      cabecalho: '<tr><th>Data</th><th>Cadastro</th><th>Móvel</th><th>Funcionário</th><th>Situação</th><th>Material</th><th>Obs. do ateliê</th></tr>',
       linhas,
       classe: 'rp-tabela--lista',
     },
   ];
   return montarPdfPadrao(blocos, {
     titulo: `Ateliê${AtelieView.categoria ? ` — ${AtelieView.categoria.replace(/^cadastro\s+/i, '')}` : ''}`,
-    periodo: `${ordenados.length} item${ordenados.length === 1 ? '' : 'ns'}`,
+    periodo: `${ordenados.length} ${ordenados.length === 1 ? 'item' : 'itens'}`,
     detalhes: 'Situação dos cadastros na conferência do ateliê',
   });
 }
@@ -1025,7 +1038,7 @@ async function montarPdfAtelieMoveis(itens) {
     const pecas = [...g.pecas].sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { numeric: true }));
     blocos.push({
       tipo: 'tabela',
-      cabecalho: '<tr><th>Peça</th><th>Categoria</th><th>Data</th><th>Funcionário</th><th>Situação</th><th>Obs. do ateliê</th></tr>',
+      cabecalho: '<tr><th>Peça</th><th>Categoria</th><th>Data</th><th>Funcionário</th><th>Situação</th><th>Material</th><th>Obs. do ateliê</th></tr>',
       linhas: pecas.map(
         (s) => `<tr>
           <td>${escapeHtml(s.nome || '')}${s.observacoes ? `<div class="rp-fraco">${escapeHtml(s.observacoes)}</div>` : ''}</td>
@@ -1033,6 +1046,7 @@ async function montarPdfAtelieMoveis(itens) {
           <td class="nowrap">${formatarDataCurta(s.criadoEm)}</td>
           <td class="nowrap">${escapeHtml(nomeCurtoRelatorio(s.funcionarioNome))}</td>
           <td class="nowrap ${s._situacao === 'reprovado' ? 'rp-ruim' : ''}">${Atelie.rotulo(s._situacao)}</td>
+          <td>${escapeHtml(s.materialNome || '')}</td>
           <td>${escapeHtml(s.atelieObs || '')}</td>
         </tr>`
       ),

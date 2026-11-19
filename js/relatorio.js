@@ -813,7 +813,10 @@ async function montarPaginasRelatorio(d) {
       linhas.push(`<tr>
           <td class="nowrap">${formatarDataCurta(i.dataFinal)}</td>
           <td>${escapeHtml(i.categoria)}</td>
-          <td>${escapeHtml(i.nome)}</td>
+          <td>${escapeHtml(i.nome)}${(() => {
+            const m = Atelie.movelParaMostrar(i.nome, i.movel);
+            return m ? `<div class="rp-fraco">Móvel: ${escapeHtml(m)}</div>` : '';
+          })()}</td>
           <td>${escapeHtml(i.numeroPedido || '')}</td>
           ${mostrarFunc ? `<td class="nowrap">${escapeHtml(nomeCurtoRelatorio(i.funcionarioNome))}</td>` : ''}
           <td>${escapeHtml(i.materialNome || '')}${i.materialLargura != null && i.materialNome ? ` <span class="rp-fraco">${formatarLarguraMaterial(i.materialLargura)}</span>` : ''}</td>
